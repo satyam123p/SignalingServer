@@ -8,22 +8,28 @@ import cors from "cors";
 const connections = [
     // will contain objects containing {ws_connection, userId}
 ];
-
 // define state for our rooms
 const rooms = [
     // will contain objects containing {roomName, peer1, peer2}
 ];
-
 // define a port for live and testing environments
 const PORT = process.env.PORT || 8080;
-
 // initilize the express application
 const app = express();
 // create an HTTP server, and pass our express application into our server
 const server = http.createServer(app);
-
 app.use(cors({
-    origin: "http://127.0.0.1:5500", // Allow requests from your client’s origin
+    origin: function(origin, callback) {
+        const allowedOrigins = [
+            "http://127.0.0.1:5500",
+            "http://127.0.0.1:5501"
+        ];
+        if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
     methods: ["GET", "POST"], // Allow only the methods you need
     allowedHeaders: ["Content-Type"],
 }));
@@ -69,7 +75,6 @@ app.post('/create-room', (req, res) => {
     });
 
 }); // end CREATE ROOM
-
 // destrying a room via a POST request
 app.post('/destroy-room', (req, res) => {
     // parse the body of the incoming request
@@ -87,7 +92,6 @@ app.post('/destroy-room', (req, res) => {
         if(existingRoomIndex !== -1) {
             // a room of this name exists, and we can remove it
             rooms.splice(existingRoomIndex, 1);
-            console.log('Peer1 (in this case also the creator) has left the room before anyone else has joined, and room has been removed from db.');
             const successMessage = {
                 data: {
                     type: constants.type.ROOM_DESTROY.RESPONSE_SUCCESS,
@@ -107,26 +111,21 @@ app.post('/destroy-room', (req, res) => {
     });
 
 }); // end DESTROYING ROOM
-
 // ################################# WEBSOCKET SERVER SETUP
 // mount our ws server onto our http server
 const wss = new WebSocketServer({server});
-
 // define a function thats called when a new connection is established
 wss.on("connection", (ws, req) => handleConnection(ws, req));
-
 function handleConnection(ws, req) {
     const userId = extractUserId(req);
     console.log(`User: ${userId} connected to WS server`);
     // update our connections array
     addConnection(ws, userId);
-
     // register all 3 event listeners
     ws.on("message", (data) => handleMessage(data));
     ws.on("close", () => handleDisconnection(userId));
     ws.on("error", () => console.log(`A WS error has occurred`));
 };
-
 function addConnection(ws, userId) {
     connections.push({
         wsConnection: ws, 
@@ -134,12 +133,10 @@ function addConnection(ws, userId) {
     });
     console.log("Total connected users: " + connections.length);
 };
-
 function extractUserId(req) {
     const queryParam = new URLSearchParams(req.url.split('?')[1]);
     return Number(queryParam.get("userId"));
 };
-
 function handleDisconnection(userId) {
     // Find the index of the connection associated with the user ID
     const connectionIndex = connections.findIndex(conn => conn.userId === userId);
@@ -153,10 +150,8 @@ function handleDisconnection(userId) {
     // provide feedback
     console.log(`User: ${userId} removed from connections`);
     console.log(`Total connected users: ${connections.length}`);
-
     // removing rooms
     rooms.forEach(room => {
-
         // ternary operator to determine the ID of the other user which we'll use to send and notify the other user that this peer has left the room
         const otherUserId = (room.peer1 === userId) ? room.peer2 : room.peer1;
         // next, define the message to send the other user
@@ -171,7 +166,6 @@ function handleDisconnection(userId) {
         if(otherUserId) {
             sendWebSocketMessageToUser(otherUserId, notificationMessage);
         };
-
         // remove the user from the room
         if(room.peer1 === userId) {
             room.peer1 = null;
@@ -192,7 +186,6 @@ function handleDisconnection(userId) {
         }
     });
 };
-
 function handleMessage(data) {
     try {
         let message = JSON.parse(data);
@@ -214,7 +207,6 @@ function handleMessage(data) {
         return;
     }
 };
-
 // >>>> NORMAL SERVER
 function normalServerProcessing(data) {
     // process the request, depending on its data type
@@ -229,13 +221,11 @@ function normalServerProcessing(data) {
             console.log("unknown data type: ", data.type);
     }
 };  
-
 function joinRoomHandler(data) {
     const { roomName, userId } = data; // Extract roomName and userId from the request
     // step 1: check if room exists
     const existingRoom = rooms.find(room => room.roomName === roomName);
     let otherUserId = null;
-
     if(!existingRoom) {
         console.log("A user tried to join, but the room does not exist");
         // send failure message
@@ -250,7 +240,6 @@ function joinRoomHandler(data) {
         sendWebSocketMessageToUser(userId, failureMessage);
         return; 
     };
-
     // step 2: check whether the room is full. 
     if(existingRoom.peer1 && existingRoom.peer2) {
         console.log("A user tried to join, but the room is full");
@@ -265,7 +254,6 @@ function joinRoomHandler(data) {
         sendWebSocketMessageToUser(userId, failureMessage);
         return;
     };
-
     // step 3: allow user to join a room
     // at this point, if our code executes here, the room is both available and exists
     console.log("A user is attempting to join a room");
@@ -278,7 +266,6 @@ function joinRoomHandler(data) {
         otherUserId = existingRoom.peer1;
         console.log(`added user ${userId} as peer2`);
     };
-
     // send success message
     const successMessage = {
         label: constants.labels.NORMAL_SERVER_PROCESS,
@@ -290,7 +277,6 @@ function joinRoomHandler(data) {
         }
     };
     sendWebSocketMessageToUser(userId, successMessage);
-
     // step 4: notify the other user that a peer has joined a room
     const notificationMessage = {
         label: constants.labels.NORMAL_SERVER_PROCESS,
@@ -303,18 +289,15 @@ function joinRoomHandler(data) {
     sendWebSocketMessageToUser(otherUserId, notificationMessage);
     return;
 }; // end JOINROOMHANDLER function
-
 // logic to process a user exiting a room 
 function exitRoomHandler(data) {
     const { roomName, userId } = data;
     const existingRoom = rooms.find(room => room.roomName === roomName);
     const otherUserId = (existingRoom.peer1 === userId) ? existingRoom.peer2 : existingRoom.peer1;
-
     if(!existingRoom) {
         console.log(`Room ${roomName} does not exist`);
         return;
     }
-
     // remove user from room
     if(existingRoom.peer1 === userId) {
         existingRoom.peer1 = null;
@@ -323,13 +306,11 @@ function exitRoomHandler(data) {
         existingRoom.peer2 = null; 
         console.log("removed peer2 from the rooms object: ", existingRoom);
     }
-    
     // clean up and remove empty rooms
     if(existingRoom.peer1 === null && existingRoom.peer2 === null) {
         const roomIndex = rooms.findIndex(room => {
             return room.roomName === roomName;
         });
-
         if(roomIndex !== -1) {
             rooms.splice(roomIndex, 1);
             console.log(`Room ${roomName} has been removed as its empty`);
@@ -347,8 +328,6 @@ function exitRoomHandler(data) {
     sendWebSocketMessageToUser(otherUserId, notificationMessage);
     return;
 };
-
-
 // >>>> WEBRTC SERVER PROCESSING
 function webRTCServerProcessing(data) {
     // process the WebRTC message, based on its type
