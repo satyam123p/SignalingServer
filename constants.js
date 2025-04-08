@@ -217,3 +217,235 @@ int main() {
     }
     return 0;
     }
+
+
+
+
+
+
+#include <libwebsockets.h>
+#include <string>
+#include <functional>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <iostream>
+#include <memory>
+
+class WebSocketClient {
+public:
+    WebSocketClient(const std::string& ip, int port, const std::string& path = "/");
+    ~WebSocketClient();
+
+    bool connect();
+    bool sendMessage(const std::string& message);
+    void setMessageCallback(std::function<void(const std::string&)> callback);
+    void disconnect();
+
+private:
+    static int callback(struct lws* wsi, enum lws_callback_reasons reason,
+                        void* user, void* in, size_t len);
+    void processReceivedMessage(const char* message, size_t len);
+    void serviceThread();
+    void sendPendingMessages();
+
+    static struct lws_protocols protocols[];
+
+    struct lws_context* context;
+    struct lws* wsi;
+    struct lws_client_connect_info connect_info;
+    
+    std::string server_ip;
+    int server_port;
+    std::string server_path;
+    
+    std::queue<std::string> send_queue;
+    std::mutex queue_mutex;
+    std::mutex wsi_mutex; // Protect wsi access
+    std::condition_variable queue_cv;
+    bool running;
+    
+    std::function<void(const std::string&)> message_callback;
+    std::thread* service_thread;
+};
+
+struct lws_protocols WebSocketClient::protocols[] = {
+    {
+        "default",
+        WebSocketClient::callback,
+        0,
+        0,
+    },
+    { nullptr, nullptr, 0, 0 } // Terminator
+};
+
+WebSocketClient::WebSocketClient(const std::string& ip, int port, const std::string& path)
+    : context(nullptr), wsi(nullptr), server_ip(ip), server_port(port),
+      server_path(path), running(false), service_thread(nullptr) {
+    lws_set_log_level(LLL_ERR | LLL_WARN, nullptr);
+}
+
+WebSocketClient::~WebSocketClient() {
+    disconnect();
+}
+
+bool WebSocketClient::connect() {
+    struct lws_context_creation_info info = {0};
+    info.port = CONTEXT_PORT_NO_LISTEN;
+    info.protocols = protocols;
+    info.options = 0;
+    info.user = this;
+
+    context = lws_create_context(&info);
+    if (!context) {
+        std::cerr << "Failed to create context" << std::endl;
+        return false;
+    }
+
+    connect_info = {0};
+    connect_info.context = context;
+    connect_info.address = server_ip.c_str();
+    connect_info.port = server_port;
+    connect_info.path = server_path.c_str();
+    connect_info.host = connect_info.address;
+    connect_info.origin = connect_info.address;
+    connect_info.protocol = protocols[0].name;
+    connect_info.userdata = this;
+
+    wsi = lws_client_connect_via_info(&connect_info);
+    if (!wsi) {
+        lws_context_destroy(context);
+        context = nullptr;
+        std::cerr << "Failed to connect" << std::endl;
+        return false;
+    }
+
+    running = true;
+    service_thread = new std::thread(&WebSocketClient::serviceThread, this);
+    return true;
+}
+
+bool WebSocketClient::sendMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    if (!running) return false;
+
+    send_queue.push(message);
+    queue_cv.notify_one();
+    {
+        std::lock_guard<std::mutex> wsi_lock(wsi_mutex);
+        if (wsi) lws_callback_on_writable(wsi); // Request writable callback
+    }
+    return true;
+}
+
+void WebSocketClient::setMessageCallback(std::function<void(const std::string&)> callback) {
+    message_callback = callback;
+}
+
+void WebSocketClient::disconnect() {
+    if (running) {
+        running = false;
+        queue_cv.notify_one(); // Wake up service thread to exit
+        if (service_thread) {
+            service_thread->join();
+            delete service_thread;
+            service_thread = nullptr;
+        }
+        if (context) {
+            lws_context_destroy(context);
+            context = nullptr;
+        }
+    }
+}
+
+void WebSocketClient::sendPendingMessages() {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    std::lock_guard<std::mutex> wsi_lock(wsi_mutex);
+
+    if (!wsi || !running) return;
+
+    while (!send_queue.empty()) {
+        std::string message = send_queue.front();
+        size_t len = message.length();
+        std::unique_ptr<unsigned char[]> buf(new unsigned char[LWS_PRE + len]);
+        memcpy(buf.get() + LWS_PRE, message.c_str(), len);
+
+        int bytes_written = lws_write(wsi, buf.get() + LWS_PRE, len, LWS_WRITE_TEXT);
+        if (bytes_written < 0 || static_cast<size_t>(bytes_written) < len) {
+            std::cerr << "Failed to send message" << std::endl;
+            return;
+        }
+        send_queue.pop();
+    }
+}
+
+void WebSocketClient::serviceThread() {
+    while (running) {
+        lws_service(context, 50); // Poll every 50ms
+    }
+}
+
+void WebSocketClient::processReceivedMessage(const char* message, size_t len) {
+    if (message_callback) {
+        message_callback(std::string(message, len));
+    }
+}
+
+int WebSocketClient::callback(struct lws* wsi, enum lws_callback_reasons reason,
+                              void* user, void* in, size_t len) {
+    WebSocketClient* client = static_cast<WebSocketClient*>(user);
+    
+    switch (reason) {
+        case LWS_CALLBACK_CLIENT_ESTABLISHED:
+            {
+                std::lock_guard<std::mutex> lock(client->wsi_mutex);
+                client->wsi = wsi;
+            }
+            std::cout << "Connection established" << std::endl;
+            break;
+
+        case LWS_CALLBACK_CLIENT_RECEIVE:
+            client->processReceivedMessage((const char*)in, len);
+            break;
+
+        case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+        case LWS_CALLBACK_CLOSED:
+            {
+                std::lock_guard<std::mutex> lock(client->wsi_mutex);
+                client->wsi = nullptr;
+            }
+            client->running = false;
+            std::cout << "Connection closed or error" << std::endl;
+            break;
+
+        case LWS_CALLBACK_CLIENT_WRITEABLE:
+            client->sendPendingMessages();
+            break;
+
+        default:
+            break;
+    }
+    return 0;
+}
+
+int main() {
+    WebSocketClient client("localhost", 8080, "/");
+    
+    client.setMessageCallback([](const std::string& message) {
+        std::cout << "Received: " << message << std::endl;
+    });
+
+    if (client.connect()) {
+        std::cout << "Connected to server" << std::endl;
+        
+        client.sendMessage("Hello, Server!");
+        
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        
+        client.disconnect();
+    } else {
+        std::cout << "Failed to connect" << std::endl;
+    }
+    return 0;
+                                                            }
