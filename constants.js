@@ -448,4 +448,134 @@ int main() {
         std::cout << "Failed to connect" << std::endl;
     }
     return 0;
-                                                            }
+         
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+#include <libwebsockets.h>
+#include <signal.h>
+#include <string.h>
+#include <iostream>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+static int interrupted = 0;
+static struct lws_context *context;
+static struct lws *web_socket = nullptr;
+static bool message_sent = false;
+
+static int callback_websockets(struct lws *wsi, enum lws_callback_reasons reason,
+                               void *user, void *in, size_t len) {
+    switch (reason) {
+        case LWS_CALLBACK_CLIENT_ESTABLISHED:
+            std::cout << "[Client] Connected to signaling server\n";
+            lws_callback_on_writable(wsi);
+            break;
+
+        case LWS_CALLBACK_CLIENT_RECEIVE:
+            std::cout << "[Server] " << std::string((char *)in, len) << std::endl;
+            break;
+
+        case LWS_CALLBACK_CLIENT_WRITEABLE: {
+            if (!message_sent) {
+                // Create a structured signaling message
+                json msg_json = {
+                    {"type", "hello"},
+                    {"data", "Hello from C++ WebSocket client"}
+                };
+
+                std::string msg = msg_json.dump();
+                size_t msg_len = msg.length();
+                if (msg_len > 1024) msg_len = 1024; // buffer safety
+
+                unsigned char buf[LWS_PRE + 1024];
+                memcpy(&buf[LWS_PRE], msg.c_str(), msg_len);
+
+                int n = lws_write(wsi, &buf[LWS_PRE], msg_len, LWS_WRITE_TEXT);
+                if (n < 0) {
+                    std::cerr << "[Error] Failed to write to server\n";
+                } else {
+                    std::cout << "[Client] Sent message to server\n";
+                    message_sent = true;
+                }
+            }
+            break;
+        }
+
+        case LWS_CALLBACK_CLOSED:
+            std::cout << "[Client] Disconnected from server\n";
+            interrupted = 1;
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
+}
+
+static struct lws_protocols protocols[] = {
+    {
+        "example-protocol",
+        callback_websockets,
+        0,
+        1024,
+    },
+    { NULL, NULL, 0, 0 }
+};
+
+void sigint_handler(int sig) {
+    interrupted = 1;
+}
+
+int main() {
+    signal(SIGINT, sigint_handler);
+
+    struct lws_context_creation_info ctx_info = {};
+    ctx_info.port = CONTEXT_PORT_NO_LISTEN;
+    ctx_info.protocols = protocols;
+    ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+
+    context = lws_create_context(&ctx_info);
+    if (!context) {
+        std::cerr << "lws init failed\n";
+        return -1;
+    }
+
+    struct lws_client_connect_info conn_info = {};
+    conn_info.context = context;
+    conn_info.address = "localhost";
+    conn_info.port = 8080;
+    conn_info.path = "/";
+    conn_info.host = conn_info.address;
+    conn_info.origin = conn_info.address;
+    conn_info.protocol = protocols[0].name;
+    conn_info.ssl_connection = 0;
+
+    web_socket = lws_client_connect_via_info(&conn_info);
+    if (!web_socket) {
+        std::cerr << "WebSocket connection failed\n";
+        return -1;
+    }
+
+    while (!interrupted) {
+        lws_service(context, 100);
+    }
+
+    lws_context_destroy(context);
+
+    return 0;
+}
