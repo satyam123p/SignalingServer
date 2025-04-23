@@ -17,3 +17,118 @@
     "ws": "^8.18.0"
   }
 }
+# This module defines the SQSService class, which can be imported in other Python files
+# using `from sqs_service import SQSService`.
+
+import os
+import json
+import boto3
+from botocore.config import Config
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.ext.boto import patch as xray_patch
+
+# Configure AWS X-Ray
+xray_recorder.configure(streaming_threshold=0)
+xray_patch(('boto3',))
+
+class SQSService:
+    def __init__(self, region=None):
+        aws_region = region if region else 'us-east-1'
+        
+        # Configure AWS based on environment
+        if os.getenv('NODE_ENV') == 'k8s':
+            print('SQSService using ElasticMQ')
+            self.sqs = boto3.client(
+                'sqs',
+                region_name=aws_region,
+                endpoint_url='http://elasticmq-sqs:9324',
+                config=Config()
+            )
+        else:
+            print('SQSService using AWS SQS')
+            self.sqs = boto3.client(
+                'sqs',
+                region_name=aws_region,
+                config=Config()
+            )
+        self.mq_connection_info = None  # Placeholder for RabbitMQ connection info
+
+    def getBasicParamSchema(self):
+        return {
+            'DelaySeconds': 10,
+            'MessageAttributes': {
+                'Title': {
+                    'DataType': 'String',
+                    'StringValue': 'The Whistler'
+                },
+                'Author': {
+                    'DataType': 'String',
+                    'StringValue': 'John Grisham'
+                },
+                'WeeksOn': {
+                    'DataType': 'Number',
+                    'StringValue': '6'
+                }
+            },
+            'MessageBody': 'Information about current NY Times fiction bestseller for week of 12/11/2016.',
+            # 'MessageDeduplicationId': 'TheWhistler',  # Required for FIFO queues
+            # 'MessageGroupId': 'Group1',  # Required for FIFO queues
+            'QueueUrl': 'SQS_QUEUE_URL'
+        }
+
+    def sendMessage(self, params, context=None):
+        if self.sqs:  # AWS SQS
+            if context and hasattr(context, 'logContext'):
+                # Append log context into message attributes of SQS message
+                log_context = context.logContext
+                try:
+                    params_with_log_context = self.appendMessageAttributes(params, 'logContext', log_context)
+                    response = self.sqs.send_message(**params_with_log_context)
+                    return response
+                except Exception as e:
+                    print(f"Warning: {e}")
+            else:
+                # Send message without log context
+                response = self.sqs.send_message(**params)
+                return response
+        elif self.mq_connection_info:  # RabbitMQ
+            self.sendMessageToRabbitMQ(params)  # Placeholder for RabbitMQ implementation
+        else:
+            print('There is no way to use queue service.')
+
+    def appendMessageAttributes(self, origin_param, key, value):
+        new_params = {
+            **origin_param,
+            'MessageAttributes': {
+                **origin_param.get('MessageAttributes', {}),
+                key: {
+                    'DataType': 'String',
+                    'StringValue': json.dumps(value)
+                }
+            }
+        }
+        return new_params
+
+    def publishToQueue(self, channel, queue_name, data):
+        print(f'Try to publish to {queue_name}', data)
+        try:
+            channel.basic_publish(
+                exchange='',
+                routing_key=queue_name,
+                body=json.dumps(data).encode('utf-8')
+            )
+            return True
+        except Exception as e:
+            raise e
+
+    def publishToChannel(self, channel, routing_key, exchange_name, data):
+        try:
+            channel.basic_publish(
+                exchange=exchange_name,
+                routing_key=routing_key,
+                body=json.dumps(data).encode('utf-8'),
+                properties={'persistent': False}
+            )
+            return True
+        except Exception as e:
+            raise e
