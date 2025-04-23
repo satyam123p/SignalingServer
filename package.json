@@ -1,1 +1,125 @@
 
+import os
+import json
+import asyncio
+import boto3
+import pika
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.ext.botocore import xray_botocore_v2
+
+# Configure AWS X-Ray
+xray_recorder.configure(streaming_threshold=0)
+
+# Configure AWS client with or without X-Ray based on environment
+if os.environ.get("NODE_ENV") == "k8s":
+    AWS = boto3
+else:
+    AWS = xray_botocore_v2(boto3)
+
+class SQSService:
+    def __init__(self, region=None):
+        awsRegion = region if region else 'us-east-1'
+        if region == 'k8s':
+            print('SQSService using ElasticMQ')
+            self.sqs = AWS.client(
+                'sqs',
+                region_name=awsRegion,
+                endpoint_url='http://elasticmq-sqs:9324'
+            )
+        else:
+            print('SQSService using AWS SQS')
+            self.sqs = AWS.client('sqs', region_name=awsRegion)
+
+    def getBasicParamSchema(self):
+        return {
+            'DelaySeconds': 10,
+            'MessageAttributes': {
+                'Title': {
+                    'DataType': 'String',
+                    'StringValue': 'The Whistler',
+                },
+                'Author': {
+                    'DataType': 'String',
+                    'StringValue': 'John Grisham',
+                },
+                'WeeksOn': {
+                    'DataType': 'Number',
+                    'StringValue': '6',
+                },
+            },
+            'MessageBody': 'Information about current NY Times fiction bestseller for week of 12/11/2016.',
+            'QueueUrl': 'SQS_QUEUE_URL',
+        }
+
+    async def sendMessage(self, params, context=None):
+        if self.sqs:
+            if not context:
+                context = None  # logger.getLogContext() is undefined, so use None
+            if context and hasattr(context, 'logContext'):
+                logContext = context.logContext
+                try:
+                    paramsWithLogContext = self.appendMessageAttributes(params, 'LogContext', logContext)
+                    return await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: self.sqs.send_message(**paramsWithLogContext)
+                    )
+                except Exception as e:
+                    print(str(e))
+            else:
+                return await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self.sqs.send_message(**params)
+                )
+        elif hasattr(self, 'mqConnectioninfo'):
+            await self.sendMessageToRabbitMQ(params)
+        else:
+            print('There is no way to use queue service.')
+
+    def appendMessageAttributes(self, originParam, key, value):
+        newParams = {
+            **originParam,
+            'MessageAttributes': {
+                key: {
+                    'DataType': 'String',
+                    'StringValue': json.dumps(value),
+                },
+                **originParam.get('MessageAttributes', {}),
+            },
+        }
+        return newParams
+
+    def publishToQueue(self, channel, queueName, data):
+        print(f'Try to publish to {queueName}', data)
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+
+        def callback(err):
+            if err:
+                loop.call_soon_threadsafe(future.set_exception, err)
+            else:
+                loop.call_soon_threadsafe(future.set_result, None)
+
+        channel.basic_publish(
+            exchange='',
+            routing_key=queueName,
+            body=json.dumps(data).encode('utf-8'),
+            callback=callback
+        )
+        return future
+
+    def publishToChannel(self, channel, routingKey, exchangeName, data):
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+
+        def callback(err):
+            if err:
+                loop.call_soon_threadsafe(future.set_exception, err)
+            else:
+                loop.call_soon_threadsafe(future.set_result, None)
+
+        channel.basic_publish(
+            exchange=exchangeName,
+            routing_key=routingKey,
+            body=json.dumps(data).encode('utf-8'),
+            properties=pika.BasicProperties(delivery_mode=1),  # Non-persistent
+            callback=callback
+        )
+        return future
