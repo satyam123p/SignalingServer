@@ -59,3 +59,97 @@ class DynamoDBService {
 }
 
 module.exports = DynamoDBService;
+
+
+
+
+
+
+
+
+import os
+import boto3
+from aws_xray_sdk.core import xray_recorder, patch_all
+
+# Configure AWS X-Ray
+xray_recorder.configure(streaming_threshold=0)
+patch_all()
+
+class DynamoDBService:
+    _instance = None
+
+    @classmethod
+    def get_instance(cls, region=None):
+        if cls._instance is None:
+            cls._instance = cls(region)
+        return cls._instance
+
+    def __init__(self, region="ap-northeast-1"):
+        node_env = os.environ.get("NODE_ENV")
+        try:
+            if region == "k8s" or node_env == "k8s":
+                print("DynamoDBService using local DynamoDB")
+                self.document_client = boto3.client(
+                    "dynamodb",
+                    region_name=region,
+                    endpoint_url="http://dynamodb:8000"
+                )
+            else:
+                print(f"DynamoDBService using AWS DynamoDB in region: {region}")
+                self.document_client = boto3.client("dynamodb", region_name=region)
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize DynamoDB client: {e}")
+
+    async def update(self, params):
+        try:
+            return await self.document_client.update_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB update failed: {e}")
+
+    async def get(self, params):
+        try:
+            return await self.document_client.get_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB get failed: {e}")
+
+    async def delete(self, params):
+        try:
+            return await self.document_client.delete_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB delete failed: {e}")
+
+    async def put(self, params):
+        try:
+            return await self.document_client.put_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB put failed: {e}")
+
+    async def batch_get(self, params):
+        try:
+            return await self.document_client.batch_get_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB batch_get failed: {e}")
+
+    async def query(self, params):
+        try:
+            return await self.document_client.query(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB query failed: {e}")
+
+    async def batch_write(self, params):
+        try:
+            return await self.document_client.batch_write_item(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB batch_write failed: {e}")
+
+    async def scan(self, params):
+        try:
+            return await self.document_client.scan(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB scan failed: {e}")
+
+    async def transact_write_items(self, params):
+        try:
+            return await self.document_client.transact_write_items(**params)
+        except Exception as e:
+            raise RuntimeError(f"DynamoDB transact_write failed: {e}")
