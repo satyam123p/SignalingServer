@@ -1,104 +1,61 @@
-import os
-import json
-import boto3
-import pika
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.ext.botocore import patch_all
+const AWSXRay = require('aws-xray-sdk');
+AWSXRay.setStreamingThreshold(0);
+const AWS = (process.env.NODE_ENV == 'k8s') ? require('aws-sdk') : AWSXRay.captureAWS(require('aws-sdk'));
 
-# Configure AWS X-Ray
-xray_recorder.configure(streaming_threshold=0)
-patch_all()  # Apply X-Ray patches globally to supported libraries like boto3
+let instance;
 
-class SQSService:
-    def __init__(self, region=None):
-        self.aws_region = region if region else 'us-east-1'
-        if os.environ.get("NODE_ENV") == "k8s":
-            print('SQSService using ElasticMQ')
-            self.sqs = boto3.client(
-                'sqs',
-                region_name=self.aws_region,
-                endpoint_url='http://elasticmq-sqs:9324'
-            )
-        else:
-            print('SQSService using AWS SQS')
-            self.sqs = boto3.client('sqs', region_name=self.aws_region)
-
-    def get_basic_param_schema(self):
-        return {
-            'DelaySeconds': 10,
-            'MessageAttributes': {
-                'Title': {
-                    'DataType': 'String',
-                    'StringValue': 'The Whistler',
-                },
-                'Author': {
-                    'DataType': 'String',
-                    'StringValue': 'John Grisham',
-                },
-                'WeeksOn': {
-                    'DataType': 'Number',
-                    'StringValue': '6',
-                },
-            },
-            'MessageBody': 'Information about current NY Times fiction bestseller for week of 12/11/2016.',
-            'QueueUrl': 'SQS_QUEUE_URL',
+class DynamoDBService {
+    static getInstance = (params) => {
+        if (!instance) {
+            instance = new DynamoDBService(params);
         }
+        return instance;
+    };
 
-    def send_message(self, params, context=None):
-        if self.sqs:
-            log_context = getattr(context, 'logContext', None) if context else None
-            try:
-                if log_context:
-                    params = self.append_message_attributes(params, 'LogContext', log_context)
-                return self.sqs.send_message(**params)
-            except Exception as e:
-                print(f"Warning: {e}")
-                return None
-        else:
-            print('There is no way to use queue service.')
-            return None
-
-    def append_message_attributes(self, origin_param, key, value):
-        return {
-            **origin_param,
-            'MessageAttributes': {
-                key: {
-                    'DataType': 'String',
-                    'StringValue': json.dumps(value),
-                },
-                **origin_param.get('MessageAttributes', {}),
-            },
+    constructor(region = 'ap-northeast-1') {
+        if (region == 'k8s') {
+            AWS.config.update({ region: region, endpoint: 'http://dynamodb:8000' });
+        } else {
+            AWS.config.update({ region: region });
         }
+        this.documentClient = new AWS.DynamoDB.DocumentClient();
+    }
 
-    def publish_to_queue(self, channel, queue_name, data):
-        print(f'Try to publish to {queue_name}', data)
-        channel.basic_publish(
-            exchange='',
-            routing_key=queue_name,
-            body=json.dumps(data).encode('utf-8')
-        )
+    update = async (params) => {
+        return await this.documentClient.update(params).promise();
+    };
 
-    def publish_to_channel(self, channel, routing_key, exchange_name, data):
-        channel.basic_publish(
-            exchange=exchange_name,
-            routing_key=routing_key,
-            body=json.dumps(data).encode('utf-8'),
-            properties=pika.BasicProperties(delivery_mode=1)  # Non-persistent
-        )
+    get = async (params) => {
+        return await this.documentClient.get(params).promise();
+    };
 
-# Example Lambda handler
-def lambda_handler(event, context):
-    sqs_service = SQSService()
-    params = sqs_service.get_basic_param_schema()
-    params['QueueUrl'] = os.environ.get('SQS_QUEUE_URL')  # Set actual queue URL
-    response = sqs_service.send_message(params, context)
-    if response:
-        return {
-            'statusCode': 200,
-            'body': json.dumps(response)
-        }
-    else:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': 'Failed to send message'})
-        }
+    delete = async (params) => {
+        return await this.documentClient.delete(params).promise();
+    };
+
+    put = async (params) => {
+        return await this.documentClient.put(params).promise();
+    };
+
+    batchGet = async (params) => {
+        return await this.documentClient.batchGet(params).promise();
+    };
+
+    query = async (params) => {
+        return await this.documentClient.query(params).promise();
+    };
+
+    batchWrite = async (params) => {
+        return await this.documentClient.batchWrite(params).promise();
+    };
+
+    scan = async (params) => {
+        return await this.documentClient.scan(params).promise();
+    };
+
+    transactWriteItems = async (params) => {
+        return await this.documentClient.transactWrite(params).promise();
+    };
+}
+
+module.exports = DynamoDBService;
