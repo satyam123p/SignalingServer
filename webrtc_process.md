@@ -142,3 +142,179 @@ Our WebSocket signaling server is now used to facilitate communication between b
   - At this point, both peers have completed all necessary setup steps, including exchanging offers, answers, and ICE candidates.
   - A successful WebRTC connection has been established, enabling real-time communication between PEER1 and PEER2!
   - CELEBRATE 🥤
+  - 
+
+
+
+
+
+
+
+
+import json
+import logging
+import boto3
+from controller.dynamoDBservice import DynamoDBService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def lambda_handler(event, context):
+    try:
+        # Initialize DynamoDB service
+        service = DynamoDBService.get_instance(region=boto3.Session().region_name)
+
+        # Validate event parameters
+        action = event.get('action')
+        params = event.get('params', {})
+        if not action:
+            raise ValueError("Missing 'action' parameter in event")
+
+        # Log the action being performed
+        logger.info(f"Processing action: {action}")
+
+        # Handle different DynamoDB actions
+        if action == 'get':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
+            result = service.get(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'update':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
+            params['UpdateExpression'] = 'SET playingInformation = :pi'
+            params['ExpressionAttributeValues'] = {':pi': {'M': {'status': {'S': 'active'}}}}
+            result = service.update(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'put':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Item'] = {
+                'screenId': {'S': 'b5-9f-3z-8a-c3-87'},
+                'playingInformation': {'M': {'status': {'S': 'active'}}}
+            }
+            result = service.put(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'batch_get':
+            params['RequestItems'] = {
+                'fcms-screens-dm': {
+                    'Keys': [
+                        {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
+                    ]
+                }
+            }
+            result = service.batch_get(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'query':
+            params = {
+                'TableName': 'fcms-screens-dm',
+                'KeyConditionExpression': 'screenId = :v1',
+                'ExpressionAttributeValues': {':v1': {'S': 'b7-9c-3d-8a-c1-86'}},
+                'ProjectionExpression': 'screenId, playingInformation'
+            }
+            result = service.query(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'batch_write':
+            params = {
+                'RequestItems': {
+                    'fcms-screens-dm': [
+                        {
+                            'PutRequest': {
+                                'Item': {
+                                    'screenId': {'S': 'example1'},
+                                    'data': {'S': 'value1'}
+                                }
+                            }
+                        },
+                        {
+                            'DeleteRequest': {
+                                'Key': {'screenId': {'S': 'example2'}}
+                            }
+                        }
+                    ]
+                }
+            }
+            result = service.batch_write(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'scan':
+            params = {
+                'TableName': 'fcms-screens-dm',
+                'FilterExpression': 'playingInformation.#status = :active',
+                'ExpressionAttributeNames': {'#status': 'status'},
+                'ExpressionAttributeValues': {':active': {'S': 'active'}}
+            }
+            result = service.scan(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'transact_write':
+            params = {
+                'TransactItems': [
+                    {
+                        'Put': {
+                            'TableName': 'fcms-screens-dm',
+                            'Item': {
+                                'screenId': {'S': 'example3'},
+                                'data': {'S': 'value3'}
+                            }
+                        }
+                    },
+                    {
+                        'Delete': {
+                            'TableName': 'fcms-screens-dm',
+                            'Key': {'screenId': {'S': 'example4'}}
+                        }
+                    }
+                ]
+            }
+            result = service.transact_write_items(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        elif action == 'delete':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
+            result = service.delete(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(result)
+            }
+
+        else:
+            raise ValueError(f"Unsupported action: {action}")
+
+    except Exception as e:
+        logger.error(f"Error processing action {action}: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+  
