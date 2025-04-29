@@ -318,3 +318,53 @@ def lambda_handler(event, context):
             'body': json.dumps({'error': str(e)})
         }
   
+
+
+
+
+
+
+
+import json
+import logging
+import boto3
+from controller.dynamoDBservice import DynamoDBService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def lambda_handler(event, context):
+    try:
+        # Initialize DynamoDB service
+        service = DynamoDBService.get_instance(region=boto3.Session().region_name)
+
+        # Validate event parameters
+        action = event.get('action')
+        params = event.get('params', {})
+        if not action or action != 'scan':
+            raise ValueError("Only 'scan' action is supported")
+
+        # Log the action being performed
+        logger.info("Processing scan action")
+
+        # Perform scan operation
+        params = {
+            'TableName': 'fcms-screens-dm',
+            'FilterExpression': 'playingInformation.#status = :active',
+            'ExpressionAttributeNames': {'#status': 'status'},
+            'ExpressionAttributeValues': {':active': {'S': 'active'}}
+        }
+        result = service.scan(params)
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing scan action: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
