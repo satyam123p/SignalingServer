@@ -1,66 +1,222 @@
-npm run android
+[Chirag Goel] 04-29-2025 11:45
+{
+  "statusCode": 200,
+  "body": {
+    "Item": {
+      "playingInformation": {
+        "M": {}
+      },
+      "screenId": {
+        "S": "b7-9c-3d-8a-c1-86"
+      },
+      "enrollment": {
+        "M": {
+          "errorCode": {
+            "N": "500"
+          },
+          "log": {
+            "L": [
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTime": {
+                    "N": "1705409257031"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Fail to get TBM Server Auth."
+                  },
+                  "createdTime": {
+                    "N": "1705409258075"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTime": {
+                    "N": "1705409432530"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Fail to get TBM Server Auth."
+                  },
+                  "createdTime": {
+                    "N": "1705409433611"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTime": {
+                    "N": "1705409564208"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Fail to get TBM Server Auth."
+                  },
+                  "createdTime": {
+                    "N": "1705409565252"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTime": {
+                    "N": "1705410840215"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Fail to get TBM Server Auth."
+                  },
+                  "createdTime": {
+                    "N": "1705410841215"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTime": {
+                    "N": "1705410942219"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Fail to get TBM Server Auth."
+                  },
+                  "createdTime": {
+                    "N": "1705410943285"
+                  }
+                }
+              },
+              {
+                "M": {
+                  "message": {
+                    "S": "Success to get screen Serial Number"
+                  },
+                  "createdTim
 
-> TestProject@0.0.1 android
-> react-native run-android
+[Chirag Goel] 04-29-2025 15:49
+{
+  "statusCode": 500,
+  "body": "DynamoDB batch_get failed: Parameter validation failed:\nInvalid type for parameter RequestItems.fcms-screens-dm, value: [{'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}], type: <class 'list'>, valid types: <class 'dict'>"
+}                                                                                                                                                                                                      import boto3
+from controller.dynamoDBservice import DynamoDBService
 
-info Launching emulator...
-info Successfully launched emulator.
-info Installing the app...
-
-Welcome to Gradle 9.0-milestone-4!
-
-For more details see https://docs.gradle.org/9.0-milestone-4/release-notes.html
-
-Starting a Gradle Daemon, 1 incompatible Daemon could not be reused, use --status for details
-
-> Task :gradle-plugin:react-native-gradle-plugin:compileKotlin
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/DependencyUtils.kt:179:13 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/DependencyUtils.kt:181:13 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:31:9 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:33:13 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:45:11 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:65:13 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:67:17 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:84:33 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:84:33 Onlyw: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:84:33 Onlyw: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:84:33 Onlyw: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:84:33 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-w: file:///C:/Users/satyam.ps/TestProject/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/ProjectUtils.kt:94:37 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type '@Nullable() kotlin.Any?'.
-
-> Task :app:configureCMakeDebug[arm64-v8a] FAILED
-
-[Incubating] Problems report is available at: file:///C:/Users/satyam.ps/TestProject/android/build/reports/problems/problems-report.html
-
-Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.0.
-
-You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
-
-For more on this, please refer to https://docs.gradle.org/9.0-milestone-4/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
-32 actionable tasks: 32 executed
-
-info 💡 Tip: Make sure that you have set up your development environment correctly, by running npx react-native doctor. To read more about doctor command visit: https://github.com/react-native-community/cli/blob/main/packages/cli-doctor/README.md#doctor 
-
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/C:/Users/satyam.ps/.gradle/wrapper/dists/gradle-9.0-milestone-4-bin/e6a0nr7pv5krnmd6hrd6eylex/gradle-9.0-milestone-4/lib/native-platform-0.22-milestone-28.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
-
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Execution failed for task ':app:configureCMakeDebug[arm64-v8a]'.
-> WARNING: A restricted method in java.lang.System has been called
-
-* Try:
-> Run with --stacktrace option to get the stack trace.
-> Run with --info or --debug option to get more log output.
-> Run with --scan to get full insights.
-> Get more help at https://help.gradle.org.
-
-BUILD FAILED in 3m 36s
-error Failed to install the app. Command failed with exit code 1: gradlew.bat app:installDebug -PreactNativeDevServerPort=8081
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/C:/Users/satyam.ps/.gradle/wrapper/dists/gradle-9.0-milestone-4-bin/e6a0nr7pv5krnmd6hrd6eylex/gradle-9.0-milestone-4/lib/native-platform-0.22-milestone-28.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled FAILURE: Build failed with an exception. * What went wrong: Execution failed for task ':app:configureCMakeDebug[arm64-v8a]'. > WARNING: A restricted method in java.lang.System has been called * Try: > Run with --stacktrace option to get the stack trace. > Run with --info or --debug option to get more log output. > Run with --scan to get full insights. > Get more help at https://help.gradle.org. BUILD FAILED in 3m 36s.
-info Run CLI with --verbose flag for more details.
-PS C:\Users\satyam.ps\TestProject>
+def lambda_handler(event, context):
+    service = DynamoDBService.get_instance(region=boto3.Session().region_name)
+    action = event.get('action')
+    params = event.get('params', {})
+    try:
+        if action == 'get':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': 'b7-9c-3d-8a-c1-86'}
+            result = service.get(params)
+            print(result)
+        elif action == 'update':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': 'b7-9c-3d-8a-c1-86'}
+            params['UpdateExpression'] = 'SET playingInformation = :pi'
+            params['ExpressionAttributeValues'] = {':pi': {'M': {'status': 'active'}}}
+            result = service.update(params)
+            print(result)
+        elif action == 'put':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Item'] = {
+                'screenId': {'S': 'b5-9f-3z-8a-c3-87'},
+                'playingInformation': {'M': {'status': 'active'}},
+            }
+            result = service.put(params)
+            print(result)
+        elif action == 'batch_get':
+            params['RequestItems'] = {
+                'fcms-screens-dm': [
+                    {'screenId': 'b7-9c-3d-8a-c1-86'},
+                ]
+            }
+            result = service.batch_get(params)
+            print(result)
+        elif action == 'query':
+            params = {
+                'TableName': 'fcms-screens-dm',
+                'KeyConditionExpression': 'screenId = :v1',
+                'ExpressionAttributeValues': {':v1': {'S': 'b7-9c-3d-8a-c1-86'}},
+                'ProjectionExpression': 'screenId, playingInformation'
+            }
+            result = service.query(params)
+            print(result)
+        elif action == 'batch_write':
+            params = {
+                'RequestItems': {
+                    'fcms-screens-dm': [
+                        {'PutRequest': {'Item': {'screenId': 'example1', 'data': 'value1'}}},
+                        {'DeleteRequest': {'Key': {'screenId': 'example2'}}}
+                    ]
+                }
+            }
+            result = service.batch_write(params)   
+            print(result) 
+        elif action == 'scan':
+            params = {
+                'TableName': 'fcms-screens-dm',
+                'FilterExpression': 'status = :active',
+                'ExpressionAttributeValues': {':active': {'S': 'active'}}
+            }
+            result = service.scan(params)
+            print(result)  
+        elif action == 'transact_write':
+            params = {
+                'TransactItems': [
+                    {
+                        'Put': {
+                            'TableName': 'fcms-screens-dm',
+                            'Item': {'screenId': 'example3', 'data': 'value3'}
+                        }
+                    },
+                    {
+                        'Delete': {
+                            'TableName': 'fcms-screens-dm',
+                            'Key': {'screenId': 'example4'}
+                        }
+                    }
+                ]
+            }
+            result = service.transact_write_items(params)
+            print(result)  
+        elif action == 'delete':
+            params['TableName'] = 'fcms-screens-dm'
+            params['Key'] = {'screenId': 'b7-9c-3d-8a-c1-86'}
+            result = service.delete(params)
+            print(result)
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': str(e)
+        }    i want you to give me updated lambda handler that should be working
