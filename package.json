@@ -1,3 +1,22 @@
+class ResponseCodes:
+    OK = {"CODE": "OK", "MESSAGE": "Success"}
+    UNKNOWN = {"CODE": "UNKNOWN", "MESSAGE": "Unknown error"}
+    INVALID_PARAMETER_VALUE = {"CODE": "INVALID_PARAMETER_VALUE", "MESSAGE": "Invalid parameter value"}
+    NOT_FOUND = {"CODE": "NOT_FOUND", "MESSAGE": "Resource not found"}
+    BAD_REQUEST = {"CODE": "BAD_REQUEST", "MESSAGE": "Bad request"}
+    UNAUTHORIZED = {"CODE": "UNAUTHORIZED", "MESSAGE": "Unauthorized access"}
+    FORBIDDEN = {"CODE": "FORBIDDEN", "MESSAGE": "Access forbidden"}
+    INTERNAL_SERVER_ERROR = {"CODE": "INTERNAL_SERVER_ERROR", "MESSAGE": "Internal server error"}
+
+RESPONSE_CODES = ResponseCodes()
+
+
+
+
+
+
+
+
 import json
 import logging
 import boto3
