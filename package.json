@@ -1,3 +1,44 @@
+
+from http import HTTPStatus
+from response_service import ResponseService
+
+def lambda_handler(event, context):
+    try:
+        response_service = ResponseService(event=event, context=context, is_ecs=False)
+        action = event.get('action', '').lower()
+
+        if action == 'create_no_content_http_response':
+            return response_service.create_no_content_http_response({})
+
+        elif action == 'create_accepted_http_response':
+            return response_service.create_accepted_http_response({})
+
+        elif action == 'create_ok_http_response':
+            return response_service.create_ok_http_response({})
+
+        elif action == 'create_created_http_response':
+            return response_service.create_created_http_response('12345', '/resources/12345')
+
+        elif action == 'create_error_http_response':
+            error = Exception('Test error')
+            error.name = 'TEST_ERROR'
+            return response_service.create_error_http_response(HTTPStatus.INTERNAL_SERVER_ERROR, error, {})
+
+        else:
+            return response_service.create_error_http_response(
+                HTTPStatus.BAD_REQUEST,
+                Exception('Invalid action'),
+                {'error': 'Valid actions: create_no_content_http_response, create_accepted_http_response, create_ok_http_response, create_created_http_response, create_error_http_response'}
+            )
+
+    except Exception as e:
+        response_service = ResponseService(event=event, context=context, is_ecs=False)
+        return response_service.create_error_http_response(HTTPStatus.INTERNAL_SERVER_ERROR, e, {'error': str(e)})
+
+
+
+
+
 class ResponseCodes:
     OK = {"CODE": "OK", "MESSAGE": "Success"}
     UNKNOWN = {"CODE": "UNKNOWN", "MESSAGE": "Unknown error"}
