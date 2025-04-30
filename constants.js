@@ -1,3 +1,32 @@
+import json
+from http import HTTPStatus
+from response_service import ResponseService, RESPONSE_CODES
+
+def lambda_handler(event, context):
+    try:
+        # Instantiate ResponseService with event and context
+        response_service = ResponseService(event=event, context=context, is_ecs=False)
+        
+        # Example: Create a sample OK response
+        response_body = {"message": "Hello from Lambda!"}
+        response = response_service.create_ok_http_response(response_body)
+        
+        return response
+    
+    except Exception as e:
+        # Handle errors using ResponseService
+        response_service = ResponseService(event=event, context=context, is_ecs=False)
+        error_response = response_service.create_error_http_response(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            error_object=e,
+            body={"error": str(e)}
+        )
+        return error_response
+
+
+
+
+
 
 import json
 import logging
