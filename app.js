@@ -1,624 +1,362 @@
-import React, { useRef, useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  SafeAreaView,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-} from 'react-native';
-import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCDataChannel,
-} from 'react-native-webrtc';
-
-const App = () => {
-  let pc;
-  let dataChannel;
-  const iceCandidatesGenerated = [];
-  const iceCandidatesReceivedBuffer = [];
-
-const type = {
-    ROOM_CREATE: {
-        RESPONSE_FAILURE: "CHECK_ROOM_RESPONSE_FAILURE",
-        RESPONSE_SUCCESS: "CHECK_ROOM_RESPONSE_SUCCESS", 
-    },
-    ROOM_DESTROY: {
-        RESPONSE_FAILURE: "DESTROY_ROOM_RESPONSE_FAILURE",
-        RESPONSE_SUCCESS: "DESTORY_ROOM_RESPONSE_SUCCESS", 
-    },
-    ROOM_JOIN: {
-        RESPONSE_FAILURE: "JOIN_ROOM_RESPONSE_FAILURE",
-        RESPONSE_SUCCESS: "JOIN_ROOM_RESPONSE_SUCCESS",
-        REQUEST: "JOIN_ROOM_REQUEST",
-        NOTIFY: "JOIN_ROOM_NOTIFY" 
-    },
-    ROOM_EXIT: {
-        REQUEST: "EXIT_ROOM_REQUEST",
-        NOTIFY: "EXIT_ROOM_NOTIFY" 
-    },
-    ROOM_DISONNECTION: {
-        NOTIFY: "DISCONNECT_ROOM_NOTIFICATION"
-    },
-    WEB_RTC: {
-        OFFER: "OFFER",
-        ANSWER: "ANSWER",
-        ICE_CANDIDATES: "ICE_CANDIDATES"
-    }
-};
-const labels = {
-    NORMAL_SERVER_PROCESS: "NORMAL_SERVER_PROCESS",
-    WEBRTC_PROCESS: "WEBRTC_PROCESS"
-};
-
-let  userId=null;
-let roomName=null;
-let otherUserId=null;
-let wsConnection=null;
-
-// Refs for UI components
-const inputRoomNameElement = useRef(null);
-const joinRoomButton = useRef(null);
-const createRoomButton = useRef(null);
-const messageInputField = useRef(null);
-const sendMessageButton = useRef(null);
-const destroyRoomButton = useRef(null);
-const exitButton = useRef(null);
-const messageContainer = useRef(null);
-// WebRTC configuration
-const webRTCConfiguratons = {
-    iceServers: [
-        {
-            urls: [
-                "stun:stun.l.google.com:19302",
-                "stun:stun2.l.google.com:19302",
-                "stun:stun3.l.google.com:19302",
-                "stun:stun4.l.google.com:19302",
-            ]
-        }
-    ]
-};
-function exitRoom() {
-    if (inputRoomNameElement.current) {
-        inputRoomNameElement.current.clear();
-    }
-    roomName=null;
-    otherUserId=null;
-}
-
-function updateUiForRemainingUser() {
-    Alert.alert("Notification", "A user has left your room");
-    otherUserId=null;
-}
-
-function addOutgoingMessageToUi(message) {
-    const userTag = "YOU";
-    const formattedMessage = `${userTag}: ${message}`;
-    return formattedMessage; 
-}
-
-function addIncomingMessageToUi(msg) {
-    const formattedMessage = `${otherUserId}: ${msg}`;
-    return formattedMessage;
-}
-
-function createRoom(roomName, userId) {
-    fetch('http://10.0.2.2:8080/create-room', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        }, 
-        body: JSON.stringify({ roomName, userId })
+// import modules
+import http from "http";
+import express from "express";
+import { WebSocketServer } from "ws";
+import * as constants from "./constants.js";
+import cors from "cors";
+// define global variables
+const connections = [
+    // will contain objects containing {ws_connection, userId}
+];
+// define state for our rooms
+const rooms = [
+    // will contain objects containing {roomName, peer1, peer2}
+];
+// define a port for live and testing environments
+const PORT = process.env.PORT || 8080;
+// initilize the express application
+const app = express();
+// create an HTTP server, and pass our express application into our server
+const server = http.createServer(app);
+app.use(cors());
+// room creation via a POST request
+app.post('/create-room', (req, res) => {
+    // parse the body of the incoming request
+    let body = "";
+    req.on("data", chunk => {
+        body += chunk.toString();
     })
-    .then(response => response.json())
-    .then(resObj => {   
-        if (resObj.data.type === type.ROOM_CREATE.RESPONSE_SUCCESS) {
-            roomName=roomName;
-            Alert.alert("Success", "Room created successfully.");
-        }
-        if (resObj.data.type === type.ROOM_CREATE.RESPONSE_FAILURE) {
-            console.log("Create Room Failure->", resObj.data.message);
-        }
-    })
-    .catch(err => {
-        console.log("An error occurred trying to create a room:-> ", err);
-    });
-}
-
-function destroyRoom(roomName) {
-    fetch('http://10.0.2.2:8080/destroy-room', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        }, 
-        body: JSON.stringify({ roomName })
-    })
-    .then(response => response.json())
-    .then(resObj => {   
-        if (resObj.data.type === type.ROOM_DESTROY.RESPONSE_SUCCESS) {
-            exitRoom();
-        }
-        if (resObj.data.type === type.ROOM_DESTROY.RESPONSE_FAILURE) {
-            console.log(resObj.data.message);
-        }
-    })
-    .catch(err => {
-        console.log("An error occurred trying to destroy a room: ", err);
-    });
-}
-
-// WebSocket event listeners
-function registerSocketEvents() {
-    wsConnection.onopen = () => {
-        console.log("You have connected with our websocket server");
-        wsConnection.onmessage = handleMessage;
-        wsConnection.onclose = handleClose;
-        wsConnection.onerror = handleError;
-    };
-}
-
-function handleClose() {
-    console.log("You have been disconnected from our ws server");
-}
-
-function handleError() {
-    console.log("An error was thrown while listening on onerror event on websocket");
-}
-
-function joinRoom(roomName, userId) {
-    const message = {
-        label: labels.NORMAL_SERVER_PROCESS,
-        data: {
-            type: type.ROOM_JOIN.REQUEST,
-            roomName,
-            userId
-        }
-    };
-    wsConnection.send(JSON.stringify(message));
-}
-function sendExitRoomRequest(roomName, userId) {
-    const message = {
-        label: labels.NORMAL_SERVER_PROCESS,
-        data: {
-            type: type.ROOM_EXIT.REQUEST,
-            roomName,
-            userId
-        }
-    };
-    wsConnection.send(JSON.stringify(message));
-}
-
-function sendOffer(offer) {
-    const message = {
-        label: labels.WEBRTC_PROCESS,
-        data: {
-            type: type.WEB_RTC.OFFER,
-            offer, 
-            otherUserId:otherUserId
-        }
-    };
-    wsConnection.send(JSON.stringify(message));
-}
-
-function sendAnswer(answer) {
-    const message = {
-        label: labels.WEBRTC_PROCESS, 
-        data: {
-            type: type.WEB_RTC.ANSWER,
-            answer, 
-            otherUserId:otherUserId
-        }
-    };
-    wsConnection.send(JSON.stringify(message));
-}
-
-function sendIceCandidates(arrayOfIceCandidates) {
-    const message = {
-        label: labels.WEBRTC_PROCESS,
-        data: {
-            type: type.WEB_RTC.ICE_CANDIDATES,
-            candidatesArray: arrayOfIceCandidates,
-            otherUserId: otherUserId
-        }
-    };
-    wsConnection.send(JSON.stringify(message));
-}
-
-function handleMessage(incomingMessageEventObject) {
-    const message = JSON.parse(incomingMessageEventObject.data);
-    switch (message.label) {
-        case labels.NORMAL_SERVER_PROCESS:
-            normalServerProcessing(message.data);
-            break;
-        case labels.WEBRTC_PROCESS:
-            webRTCServerProcessing(message.data);
-            break;
-        default: 
-            console.log("Unknown server processing label: ", message.label);
-    }
-}
-
-function normalServerProcessing(data) {
-    switch (data.type) {
-        case type.ROOM_JOIN.RESPONSE_SUCCESS: 
-            joinSuccessHandler(data);
-            Alert.alert("Success", "Join room successful");
-            break; 
-        case type.ROOM_JOIN.RESPONSE_FAILURE: 
-            console.log("Join room failed");
-            break; 
-        case type.ROOM_JOIN.NOTIFY: 
-            joinNotificationHandler(data);
-            break; 
-        case type.ROOM_EXIT.NOTIFY:
-            exitNotificationHandler(data);
-            break;
-        case type.ROOM_DISONNECTION.NOTIFY:
-            exitNotificationHandler(data);
-            break;
-        default: 
-            console.log("Unknown data type: ", data.type);
-    }
-}
-
-function webRTCServerProcessing(data) {
-    switch (data.type) {
-        case type.WEB_RTC.OFFER:
-            handleOffer(data);
-            break;
-        case type.WEB_RTC.ANSWER:
-            handleAnswer(data);
-            break; 
-        case type.WEB_RTC.ICE_CANDIDATES:
-            handleIceCandidates(data);
-            break; 
-        default: 
-            console.log("Unknown data type: ", data.type);
-    }
-}
-
-function joinSuccessHandler(data) {
-    otherUserId = data.creatorId
-    roomName= data.roomName;
-    startWebRTCProcess(); 
-}
-
-function joinNotificationHandler(data) {
-    Alert.alert("Notification", `User ${data.joinUserId} has joined your room`);
-    otherUserId = data.joinUserId
-}
-
-function exitNotificationHandler() {
-    updateUiForRemainingUser();
-    closePeerConnection();
-}
-
-// WebRTC functions
-function startWebRTCProcess() {
-    createPeerConnectionObject();
-    createDataChannel(true);
-
-    pc.current?.createOffer().then(function(createdOffer) {
-        const offer = createdOffer;
-        return pc.current?.setLocalDescription(offer);
-    }).then(function() {
-        sendOffer(pc.current?.localDescription);
-    }).catch(function(error) {
-        console.error('Error occurred during WebRTC process:', error);
-    });
-}
-
-function createPeerConnectionObject() {
-    pc.current = new RTCPeerConnection(webRTCConfiguratons);
-    pc.current.onconnectionstatechange = () => {
-        console.log("Connection state changed to: ", pc.current?.connectionState); 
-        if (pc.current?.connectionState === "connected") {
-            Alert.alert("Success", "YOU HAVE DONE IT! A WEBRTC CONNECTION HAS BEEN MADE BETWEEN YOU AND THE OTHER PEER");
-        }
-    };
-    pc.current.onsignalingstatechange = () => {
-        console.log(`Signaling state changed to: ${pc.current?.signalingState}`);
-    };
-    pc.current.onicecandidate = (e) => {
-        if (e.candidate) {
-            console.log("ICE:", e.candidate);
-            iceCandidatesGenerated.current.push(e.candidate);
-        }
-    };
-}
-
-function createDataChannel(isOfferor) {
-    if (isOfferor) {
-        const dataChannelOptions = {
-            ordered: false, 
-            maxRetransmits: 0
-        };
-        dataChannel.current = pc.current?.createDataChannel("top-secret-chat-room", dataChannelOptions);
-        registerDataChannelEventListeners();
-    } else {
-        pc.current.ondatachannel = (e) => {
-            console.log("The ondatachannel event was emitted for PEER2. Here is the event object: ", e);
-            dataChannel.current = e.channel;
-            registerDataChannelEventListeners();
-        };
-    }
-}
-
-function registerDataChannelEventListeners() {
-    dataChannel.current.onmessage = (e) => {
-        console.log("Message has been received from a Data Channel");
-        const msg = e.data; 
-        const formattedMessage = addIncomingMessageToUi(msg);
-        setMessages((prevMessages) => [...prevMessages, formattedMessage]);
-    };
-    dataChannel.current.onclose = () => {
-        console.log("The 'close' event was fired on your data channel object");
-    };
-    dataChannel.current.onopen = () => { 
-        console.log("Data Channel has been opened. You are now ready to send/receive messages over your Data Channel");
-    };
-}
-
-async function handleOffer(data) {
-    let answer; 
-    createPeerConnectionObject(); 
-    createDataChannel(false);
-    await pc.current?.setRemoteDescription(data.offer);
-    answer = await pc.current?.createAnswer();
-    await pc.current?.setLocalDescription(answer);
-    sendAnswer(answer);
-    sendIceCandidates(iceCandidatesGenerated.current);
-}
-
-async function handleAnswer(data) {
-    sendIceCandidates(iceCandidatesGenerated.current);
-    await pc.current?.setRemoteDescription(data.answer);
-    for (const candidate of iceCandidatesReceivedBuffer.current) {
-        await pc.current?.addIceCandidate(candidate);
-    }; 
-    iceCandidatesReceivedBuffer.current.splice(0, iceCandidatesReceivedBuffer.current.length);
-}
-
-function handleIceCandidates(data) {
-    if (pc.current?.remoteDescription) {
-        try {
-            data.candidatesArray.forEach((candidate) => {
-                pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
-            });
-        } catch (error) {
-            console.log("Error trying to add an ICE candidate to the pc object", error);
-        }
-    } else {
-        data.candidatesArray.forEach((candidate) => {
-            iceCandidatesReceivedBuffer.current.push(new RTCIceCandidate(candidate));
+    req.on("end", () => {
+        // extract variables from our body
+        const { roomName, userId } = JSON.parse(body);
+        // check if room already exists
+        const existingRoom = rooms.find(room => {
+            return room.roomName === roomName;
         });
-    }   
-}
+        if(existingRoom) {
+            // a room of this name exists, and we need to send a failure message back to the client
+            const failureMessage = {
+                data: {
+                    type: constants.type.ROOM_CREATE.RESPONSE_FAILURE,
+                    message: "That room has already been created. Try another name, or join."
+                }
+            };
+            res.status(400).json(failureMessage);
+        } else {
+            // the room does not already exist, so we have to add it to the rooms array
+            rooms.push({
+                roomName, 
+                peer1: userId,
+                peer2: null
+            });
+            console.log("Room created. Updated rooms array: ", rooms);
+            // send a success message back to the client
+            const successMessage = {
+                data: {
+                    type: constants.type.ROOM_CREATE.RESPONSE_SUCCESS
+                }
+            };
+            res.status(200).json(successMessage);
+        }
+    });
 
-function sendMessageUsingDataChannel(message) {
-    dataChannel.current?.send(message);
-}
+}); // end CREATE ROOM
+// destrying a room via a POST request
+app.post('/destroy-room', (req, res) => {
+    // parse the body of the incoming request
+    let body = "";
+    req.on("data", chunk => {
+        body += chunk.toString();
+    })
+    req.on("end", () => {
+        // extract variables from our body
+        const { roomName } = JSON.parse(body);
+        // check if room already exists
+        const existingRoomIndex = rooms.findIndex(room => {
+            return room.roomName === roomName;
+        });
+        if(existingRoomIndex !== -1) {
+            // a room of this name exists, and we can remove it
+            rooms.splice(existingRoomIndex, 1);
+            const successMessage = {
+                data: {
+                    type: constants.type.ROOM_DESTROY.RESPONSE_SUCCESS,
+                    message: "Room has been removed from the server."
+                }
+            };
+            return res.status(200).json(successMessage);
+        } else {
+            const failureMessage = {
+                data: {
+                    type: constants.type.ROOM_DESTROY.RESPONSE_FAILURE,
+                    message: "Server failed to find the room in the rooms array."
+                }
+            };
+            return res.status(400).json(failureMessage);
+        }
+    });
 
-function closePeerConnection() {
-    if (pc.current) {
-        pc.current.close();
-        pc.current = null;
-        dataChannel.current = null;
-        console.log("You have closed your peer connection by calling the 'close()' method");
-    }
-}
-  const [channelName, setChannelName] = useState('');
-  const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState([]);
-  userId = useState(Math.round(Math.random() * 1000000).toString());
-
-  // Initialize UI and WebSocket
-  useEffect(() => {
-   wsConnection = new WebSocket(`ws://10.0.2.2:8080/?userId=${userId}`);
-    registerSocketEvents();
-  }, []);
-
-  // Button handlers
-  const handleCreateRoom = () => {
-    roomName = channelName.trim();
-    setChannelName('');
-    if (!roomName) {
-      Alert.alert("Error", "Your room needs a name");
-      return;
-    }
-    createRoom(roomName, userId);
-  };
-
-  const handleDestroyRoom = () => {
-    if (roomName) {
-      destroyRoom(roomName);
-    }
-  };
-
-  const handleJoinRoom = () => {
-    roomName = channelName.trim();
-    setChannelName('');
-    if (!roomName) {
-      Alert.alert("Error", "You have to join a room with a valid name");
-      return;
-    }
-    joinRoom(roomName, userId);
-  };
-
-  const handleExitRoom = () => {
-    exitRoom();
-    if (roomName) {
-      sendExitRoomRequest(roomName, userId);
-    }
-    closePeerConnection();
-  };
-
-  const handleSendMessage = () => {
-    const msg = message.trim();
-    setMessage('');
-    if (msg) {
-      const formattedMessage = addOutgoingMessageToUi(msg);
-      setMessages((prevMessages) => [...prevMessages, formattedMessage]);
-      sendMessageUsingDataChannel(msg);
-    }
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.header}>WebRTC Chat Room</Text>
-
-        {/* Channel Name Input */}
-        <TextInput
-          ref={inputRoomNameElement}
-          style={styles.input}
-          placeholder="Enter channel name"
-          value={channelName}
-          onChangeText={setChannelName}
-        />
-
-        {/* Buttons for Room Actions */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            ref={createRoomButton}
-            style={styles.button}
-            onPress={handleCreateRoom}
-          >
-            <Text style={styles.buttonText}>Create</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            ref={joinRoomButton}
-            style={styles.button}
-            onPress={handleJoinRoom}
-          >
-            <Text style={styles.buttonText}>Join</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            ref={destroyRoomButton}
-            style={styles.button}
-            onPress={handleDestroyRoom}
-          >
-            <Text style={styles.buttonText}>Destroy Room</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            ref={exitButton}
-            style={styles.button}
-            onPress={handleExitRoom}
-          >
-            <Text style={styles.buttonText}>Exit Room</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Message Input */}
-        <TextInput
-          ref={messageInputField}
-          style={styles.input}
-          placeholder="Type a message..."
-          value={message}
-          onChangeText={setMessage}
-        />
-
-        {/* Send Button */}
-        <TouchableOpacity
-          ref={sendMessageButton}
-          style={styles.sendButton}
-          onPress={handleSendMessage}
-        >
-          <Text style={styles.buttonText}>Send</Text>
-        </TouchableOpacity>
-
-        {/* Message Container */}
-        <View ref={messageContainer} style={styles.messageContainer}>
-          {messages.length === 0 ? (
-            <Text style={styles.noMessages}>No messages yet</Text>
-          ) : (
-            messages.map((msg, index) => (
-              <Text key={index} style={styles.message}>
-                {msg}
-              </Text>
-            ))
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+}); // end DESTROYING ROOM
+// ################################# WEBSOCKET SERVER SETUP
+// mount our ws server onto our http server
+const wss = new WebSocketServer({server});
+// define a function thats called when a new connection is established
+wss.on("connection", (ws, req) => handleConnection(ws, req));
+function handleConnection(ws, req) {
+    const userId = extractUserId(req);
+    console.log(`User: ${userId} connected to WS server`);
+    // update our connections array
+    addConnection(ws, userId);
+    // register all 3 event listeners
+    ws.on("message", (data) => handleMessage(data));
+    ws.on("close", () => handleDisconnection(userId));
+    ws.on("error", () => console.log(`A WS error has occurred`));
 };
+function addConnection(ws, userId) {
+    connections.push({
+        wsConnection: ws, 
+        userId
+    });
+    console.log("Total connected users: " + connections.length);
+};
+function extractUserId(req) {
+    const queryParam = new URLSearchParams(req.url.split('?')[1]);
+    return Number(queryParam.get("userId"));
+};
+function handleDisconnection(userId) {
+    // Find the index of the connection associated with the user ID
+    const connectionIndex = connections.findIndex(conn => conn.userId === userId);
+    // If the user ID is not found in the connections array, log an error message and exit the function
+    if(connectionIndex === -1) {
+        console.log(`User: ${userId} not found in connections`);
+        return; 
+    };
+    // Remove the user's connection from the active connections array
+    connections.splice(connectionIndex, 1);
+    // provide feedback
+    console.log(`User: ${userId} removed from connections`);
+    console.log(`Total connected users: ${connections.length}`);
+    // removing rooms
+    rooms.forEach(room => {
+        // ternary operator to determine the ID of the other user which we'll use to send and notify the other user that this peer has left the room
+        const otherUserId = (room.peer1 === userId) ? room.peer2 : room.peer1;
+        // next, define the message to send the other user
+        const notificationMessage = {
+            label: constants.labels.NORMAL_SERVER_PROCESS,
+            data: {
+                type: constants.type.ROOM_DISONNECTION.NOTIFY,
+                message: `User ${userId} has been disconnected`
+            }
+        };
+        // push the message to the other user
+        if(otherUserId) {
+            sendWebSocketMessageToUser(otherUserId, notificationMessage);
+        };
+        // remove the user from the room
+        if(room.peer1 === userId) {
+            room.peer1 = null;
+        } 
+        if(room.peer2 === userId) {
+            room.peer2 = null;
+        }
+        // clean up empty rooms
+        if(room.peer1 === null && room.peer2 === null) {
+            const roomIndex = rooms.findIndex(roomInArray => {
+                return roomInArray.roomName === room.roomName;
+            });
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  header: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 20,
-  },
-  input: {
-    width: '100%',
-    height: 40,
-    borderColor: '#ccc',
-    borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: 20,
-    backgroundColor: '#fff',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 20,
-  },
-  button: {
-    flex: 1,
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginHorizontal: 5,
-  },
-  sendButton: {
-    width: '100%',
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  messageContainer: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 5,
-    padding: 10,
-    minHeight: 100,
-  },
-  message: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 5,
-  },
-  noMessages: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-});
-
-export default App;
-
+            if(roomIndex !== -1) {
+                rooms.splice(roomIndex, 1);
+                console.log(`Room ${room.roomName} has been removed as its empty`);
+            }
+        }
+    });
+};
+function handleMessage(data) {
+    try {
+        let message = JSON.parse(data);
+        // process message depending on its label type
+        switch(message.label) {
+            case constants.labels.NORMAL_SERVER_PROCESS:
+                console.log("==== normal server message ====");
+                normalServerProcessing(message.data);
+                break;
+            case constants.labels.WEBRTC_PROCESS:
+                console.log("🐗 WEBRTC SIGNALING SERVER PROCESS 🐗");
+                webRTCServerProcessing(message.data);
+                break;
+            default: 
+                console.log("Unknown message label: ", message.label);
+        }
+    } catch (error) {
+        console.log("Failed to parse message:", error);
+        return;
+    }
+};
+// >>>> NORMAL SERVER
+function normalServerProcessing(data) {
+    // process the request, depending on its data type
+    switch(data.type) {
+        case constants.type.ROOM_JOIN.REQUEST:
+            joinRoomHandler(data);
+            break;
+        case constants.type.ROOM_EXIT.REQUEST:
+            exitRoomHandler(data);
+            break;
+        default: 
+            console.log("unknown data type: ", data.type);
+    }
+};  
+function joinRoomHandler(data) {
+    const { roomName, userId } = data; // Extract roomName and userId from the request
+    // step 1: check if room exists
+    const existingRoom = rooms.find(room => room.roomName === roomName);
+    let otherUserId = null;
+    if(!existingRoom) {
+        console.log("A user tried to join, but the room does not exist");
+        // send failure message
+        const failureMessage = {
+            label: constants.labels.NORMAL_SERVER_PROCESS,
+            data: {
+                type: constants.type.ROOM_JOIN.RESPONSE_FAILURE,
+                message: "A room of that name does not exist. Either type another name, or create a room."
+            }
+        };
+        // send a failure response back to the user
+        sendWebSocketMessageToUser(userId, failureMessage);
+        return; 
+    };
+    // step 2: check whether the room is full. 
+    if(existingRoom.peer1 && existingRoom.peer2) {
+        console.log("A user tried to join, but the room is full");
+        // send failure message
+        const failureMessage = {
+            label: constants.labels.NORMAL_SERVER_PROCESS,
+            data: {
+                type: constants.type.ROOM_JOIN.RESPONSE_FAILURE,
+                message: "This room already has two participants."
+            }
+        };
+        sendWebSocketMessageToUser(userId, failureMessage);
+        return;
+    };
+    // step 3: allow user to join a room
+    // at this point, if our code executes here, the room is both available and exists
+    console.log("A user is attempting to join a room");
+    if(!existingRoom.peer1) {
+        existingRoom.peer1 = userId;
+        otherUserId = existingRoom.peer2;
+        console.log(`added user ${userId} as peer1`);
+    } else {
+        existingRoom.peer2 = userId;
+        otherUserId = existingRoom.peer1;
+        console.log(`added user ${userId} as peer2`);
+    };
+    // send success message
+    const successMessage = {
+        label: constants.labels.NORMAL_SERVER_PROCESS,
+        data: {
+            type: constants.type.ROOM_JOIN.RESPONSE_SUCCESS,
+            message: `you have successfully joined room ${existingRoom.roomName}`,
+            creatorId: otherUserId,
+            roomName: existingRoom.roomName
+        }
+    };
+    sendWebSocketMessageToUser(userId, successMessage);
+    // step 4: notify the other user that a peer has joined a room
+    const notificationMessage = {
+        label: constants.labels.NORMAL_SERVER_PROCESS,
+        data: {
+            type: constants.type.ROOM_JOIN.NOTIFY,
+            message: `User ${userId} has joined your room`,
+            joinUserId: userId
+        }
+    };
+    sendWebSocketMessageToUser(otherUserId, notificationMessage);
+    return;
+}; // end JOINROOMHANDLER function
+// logic to process a user exiting a room 
+function exitRoomHandler(data) {
+    const { roomName, userId } = data;
+    const existingRoom = rooms.find(room => room.roomName === roomName);
+    const otherUserId = (existingRoom.peer1 === userId) ? existingRoom.peer2 : existingRoom.peer1;
+    if(!existingRoom) {
+        console.log(`Room ${roomName} does not exist`);
+        return;
+    }
+    // remove user from room
+    if(existingRoom.peer1 === userId) {
+        existingRoom.peer1 = null;
+        console.log("removed peer1 from the rooms object: ", existingRoom);
+    } else {
+        existingRoom.peer2 = null; 
+        console.log("removed peer2 from the rooms object: ", existingRoom);
+    }
+    // clean up and remove empty rooms
+    if(existingRoom.peer1 === null && existingRoom.peer2 === null) {
+        const roomIndex = rooms.findIndex(room => {
+            return room.roomName === roomName;
+        });
+        if(roomIndex !== -1) {
+            rooms.splice(roomIndex, 1);
+            console.log(`Room ${roomName} has been removed as its empty`);
+        }
+        return;
+    }
+    // notify the other user that a peer has left a room
+    const notificationMessage = {
+        label: constants.labels.NORMAL_SERVER_PROCESS,
+        data: {
+            type: constants.type.ROOM_EXIT.NOTIFY,
+            message: `User ${userId} has left the room. Another user can now join.`,
+        }
+    };
+    sendWebSocketMessageToUser(otherUserId, notificationMessage);
+    return;
+};
+// >>>> WEBRTC SERVER PROCESSING
+function webRTCServerProcessing(data) {
+    // process the WebRTC message, based on its type
+    switch(data.type) {
+        // OFFER
+        case constants.type.WEB_RTC.OFFER:
+            signalMessageToOtherUser(data);
+            console.log(`Offer has been sent to user ${data.otherUserId}`);
+            break; 
+        // ANSWER
+        case constants.type.WEB_RTC.ANSWER:
+            signalMessageToOtherUser(data);
+            console.log(`Answer has been sent to user ${data.otherUserId}`);
+            break; 
+        // ICE CANDIDATES
+        case constants.type.WEB_RTC.ICE_CANDIDATES:
+            signalMessageToOtherUser(data);
+            console.log(`Ice candidates have been sent to user ${data.otherUserId}`);
+            break; 
+        // catch-all
+        default: 
+            console.log("Unknown data type: ", data.type);
+    }
+};  
+function signalMessageToOtherUser(data) {
+    const { otherUserId } = data; 
+    const message = {
+        label: constants.labels.WEBRTC_PROCESS,
+        data: data
+    };
+    sendWebSocketMessageToUser(otherUserId, message);
+};
+// >>>> WEBSOCKET SERVER GENERIC FUNCTIONS
+// send a message to a specific user
+function sendWebSocketMessageToUser(sendToUserId, message) {
+    const userConnection = connections.find(connObj => connObj.userId === sendToUserId);
+    if(userConnection && userConnection.wsConnection) {
+        userConnection.wsConnection.send(JSON.stringify(message));
+        console.log(`Message sent to ${sendToUserId}`);
+    } else {
+        console.log(`User ${sendToUserId} not found.`);
+    };
+};
+server.listen(PORT, () => {
+    console.log(`Server listening on port: ${PORT}`);
+})
