@@ -1,3 +1,186 @@
+const WebSocket = require('ws');
+
+const wss = new WebSocket.Server({ port: 8080 });
+const rooms = {};
+const clients = {};
+
+wss.on('connection', (ws, req) => {
+  const urlParams = new URLSearchParams(req.url.split('?')[1]);
+  const userId = urlParams.get('userId');
+
+  if (!userId) {
+    ws.close();
+    return;
+  }
+
+  clients[userId] = ws;
+  console.log(`User ${userId} connected`);
+
+  ws.on('message', (message) => {
+    try {
+      const parsedMessage = JSON.parse(message);
+      console.log('Received:', parsedMessage);
+
+      if (parsedMessage.label === 'NORMAL_SERVER_PROCESS') {
+        handleNormalServerProcess(parsedMessage.data, userId);
+      } else if (parsedMessage.label === 'WEBRTC_PROCESS') {
+        handleWebRTCProcess(parsedMessage.data, userId);
+      }
+    } catch (error) {
+      console.error('Error processing message:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log(`User ${userId} disconnected`);
+    handleUserDisconnect(userId);
+  });
+
+  ws.on('error', (error) => {
+    console.error(`WebSocket error for user ${userId}:`, error);
+  });
+});
+
+const handleNormalServerProcess = (data, userId) => {
+  switch (data.type) {
+    case 'CHECK_ROOM_RESPONSE_SUCCESS':
+      if (!rooms[data.roomName]) {
+        rooms[data.roomName] = { creatorId: userId, participants: [userId] };
+        console.log(`Room ${data.roomName} created by ${userId}`);
+        sendToClient(userId, {
+          label: 'NORMAL_SERVER_PROCESS',
+          data: { type: 'CHECK_ROOM_RESPONSE_SUCCESS', roomName: data.roomName },
+        });
+      } else {
+        sendToClient(userId, {
+          label: 'NORMAL_SERVER_PROCESS',
+          data: { type: 'CHECK_ROOM_RESPONSE_FAILURE', message: 'Room already exists' },
+        });
+      }
+      break;
+
+    case 'JOIN_ROOM_REQUEST':
+      if (rooms[data.roomName]) {
+        if (!rooms[data.roomName].participants.includes(userId)) {
+          rooms[data.roomName].participants.push(userId);
+          console.log(`User ${userId} joined room ${data.roomName}`);
+          sendToClient(userId, {
+            label: 'NORMAL_SERVER_PROCESS',
+            data: {
+              type: 'JOIN_ROOM_RESPONSE_SUCCESS',
+              roomName: data.roomName,
+              creatorId: rooms[data.roomName].creatorId,
+            },
+          });
+          rooms[data.roomName].participants.forEach((participant) => {
+            if (participant !== userId) {
+              sendToClient(participant, {
+                label: 'NORMAL_SERVER_PROCESS',
+                data: {
+                  type: 'JOIN_ROOM_NOTIFY',
+                  roomName: data.roomName,
+                  joinUserId: userId,
+                },
+              });
+            }
+          });
+        } else {
+          sendToClient(userId, {
+            label: 'NORMAL_SERVER_PROCESS',
+            data: { type: 'JOIN_ROOM_RESPONSE_FAILURE', message: 'Already in room' },
+          });
+        }
+      } else {
+        sendToClient(userId, {
+          label: 'NORMAL_SERVER_PROCESS',
+          data: { type: 'JOIN_ROOM_RESPONSE_FAILURE', message: 'Room does not exist' },
+        });
+      }
+      break;
+
+    case 'EXIT_ROOM_REQUEST':
+      if (rooms[data.roomName] && rooms[data.roomName].participants.includes(userId)) {
+        rooms[data.roomName].participants = rooms[data.roomName].participants.filter(
+          (id) => id !== userId
+        );
+        console.log(`User ${userId} disconnected from room ${data.roomName}`);
+        if (rooms[data.roomName].participants.length === 0) {
+          delete rooms[data.roomName];
+          console.log(`Room ${data.roomName} deleted`);
+        } else {
+          rooms[data.roomName].participants.forEach((participant) => {
+            sendToClient(participant, {
+              label: 'NORMAL_SERVER_PROCESS',
+              data: {
+                type: 'EXIT_ROOM_NOTIFY',
+                roomName: data.roomName,
+                message: `User ${userId} has left the room`,
+              },
+            });
+          });
+        }
+      }
+      break;
+
+    default:
+      console.log('Unknown normal server process type:', data.type);
+  }
+};
+
+const handleWebRTCProcess = (data, userId) => {
+  const targetUserId = data.otherUserId;
+  if (targetUserId && clients[targetUserId]) {
+    console.log(`Relayed WebRTC message type ${data.type} from ${userId}`);
+    sendToClient(targetUserId, {
+      label: 'WEBRTC_PROCESS',
+      data: { ...data, otherUserId: userId },
+    });
+  } else {
+    console.log(`Target user ${targetUserId} not found for WebRTC message from ${userId}`);
+  }
+};
+
+const handleUserDisconnect = (userId) => {
+  delete clients[userId];
+  Object.keys(rooms).forEach((roomName) => {
+    if (rooms[roomName].participants.includes(userId)) {
+      rooms[roomName].participants = rooms[roomName].participants.filter((id) => id !== userId);
+      console.log(`User ${userId} disconnected from room ${roomName}`);
+      if (rooms[roomName].participants.length === 0) {
+        delete rooms[roomName];
+        console.log(`Room ${roomName} deleted`);
+      } else {
+        rooms[roomName].participants.forEach((participant) => {
+          sendToClient(participant, {
+            label: 'NORMAL_SERVER_PROCESS',
+            data: {
+              type: 'EXIT_ROOM_NOTIFY',
+              roomName,
+              message: `User ${userId} has left the room`,
+            },
+          });
+        });
+      }
+    }
+  });
+};
+
+const sendToClient = (userId, message) => {
+  if (clients[userId] && clients[userId].readyState === WebSocket.OPEN) {
+    clients[userId].send(JSON.stringify(message));
+  } else {
+    console.log(`Cannot send to user ${userId}: client not connected`);
+  }
+};
+
+console.log('WebSocket server running on ws://localhost:8080');
+
+
+
+
+
+
+
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
