@@ -1,71 +1,14 @@
-import json
-import logging
-from http import HTTPStatus
-from typing import Any, Dict, List, Optional, Union
-from datetime import datetime
-from threading import Lock
-from const import ResponseCodes  
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
-)
+{
+  "errorMessage": "__init__() should return None, not 'ResponseService'",
+  "errorType": "TypeError",
+  "requestId": "0fa9f20f-53a4-4a74-b4d4-508bc1f78b15",
+  "stackTrace": [
+    "  File \"/var/task/lambda_function.py\", line 199, in lambda_handler\n    response_service = ResponseService(event=event, context=context, is_ecs=False)\n"
+  ]
+}
 
-class ResponseService:
-    _instance = None
-    _lock = Lock()
 
-    def __init__(self, event: Optional[Dict] = None, context: Any = None, is_ecs: Union[str, bool] = False):
-        self.logger = logging.getLogger(__name__)
-
-        # Validate is_ecs
-        if isinstance(is_ecs, str):
-            is_ecs = is_ecs.lower() == 'true'
-        elif not isinstance(is_ecs, bool):
-            self.logger.warning(f"Invalid is_ecs type: {type(is_ecs)}. Defaulting to False.")
-            is_ecs = False
-        self.is_ecs = is_ecs
-
-        event = event or {}
-        context = context or type('Context', (), {'functionName': ''})()
-        headers = event.get('headers', {})
-
-        # Initialize common attributes
-        self.function_name = getattr(context, 'functionName', '')
-        if not self.function_name and not is_ecs:
-            self.logger.warning("Context object missing functionName attribute")
-        self.requested_time = headers.get('requestedtime', int(datetime.now().timestamp() * 1000))
-        self.requested_id = headers.get('requestedid', '')
-        self.start = int(datetime.now().timestamp() * 1000)
-        self.cold_start = True
-        self.cookie = headers.get('Cookie', '')
-
-        if is_ecs:
-            self._initialize_ecs(event, context, headers)
-        else:
-            self._initialize_non_ecs(event, headers)
-
-        # Singleton pattern for non-ECS
-        if not is_ecs:
-            with self._lock:
-                if not ResponseService._instance:
-                    ResponseService._instance = self
-                else:
-                    self._update_instance(event, headers)
-                return ResponseService._instance
-
-    def _initialize_ecs(self, event: Dict, context: Any, headers: Dict):
-        self.res = context
-        self.body = event.get('body', '')
-        self.query_string_parameters = event.get('query', {})
-        self.path_parameters = event.get('params', {})
-        self.headers = {
-            'Content-Type': headers.get('content-type', 'application/json'),
-            'X-Frame-Options': 'SAMEORIGIN',
-            'functionName': self.function_name,
-            'start': self.start,
             'requestedTime': self.requested_time,
             'requestedId': self.requested_id,
         }
