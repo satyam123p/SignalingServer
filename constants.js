@@ -1,3 +1,17 @@
+{
+  "errorMessage": "__init__() should return None, not 'ResponseService'",
+  "errorType": "TypeError",
+  "requestId": "0fa9f20f-53a4-4a74-b4d4-508bc1f78b15",
+  "stackTrace": [
+    "  File \"/var/task/lambda_function.py\", line 199, in lambda_handler\n    response_service = ResponseService(event=event, context=context, is_ecs=False)\n"
+  ]
+
+
+
+
+
+
+
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
