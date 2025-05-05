@@ -1,12 +1,33 @@
+const CryptoJS = require('crypto-js');
 
-const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const encrypt = (data, key, iv) => {
+    const secret = CryptoJS.enc.Utf8.parse(key);
+    const cipher = CryptoJS.AES.encrypt(data, secret, {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        keySize: 256 / 32,
+        padding: CryptoJS.pad.Pkcs7,
+    });
+    return cipher.toString();
+};
 
-/**
- * Metro configuration
- * https://reactnative.dev/docs/metro
- *
- * @type {import('@react-native/metro-config').MetroConfig}
- */
-const config = {};
+const decrypt = (data, secret, iv) => {
+    const decrypted = CryptoJS.AES.decrypt(data.toString(), secret, {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        keySize: 256 / 32,
+        padding: CryptoJS.pad.Pkcs7,
+    });
+    return decrypted.toString(CryptoJS.enc.Utf8);
+};
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+const encryptHmac = (payload, secretKey) => {
+    return CryptoJS.HmacSHA256(payload, secretKey).toString();
+};
+
+const CryptoService = {
+    encrypt,
+    decrypt,
+    encryptHmac,
+};
+module.exports = CryptoService;
