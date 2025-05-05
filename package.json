@@ -1,3 +1,194 @@
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+import base64
+import hmac
+import hashlib
+import binascii
+import json
+
+def encrypt(data, key, iv):
+    """
+    Encrypt data using AES-256-CBC with PKCS7 padding.
+    
+    Args:
+        data (str): The plaintext to encrypt.
+        key (str): The encryption key (UTF-8 encoded).
+        iv (str): The initialization vector (hex-encoded).
+    
+    Returns:
+        str: Base64-encoded ciphertext.
+    """
+    try:
+        # Convert inputs to bytes
+        data_bytes = data.encode('utf-8')
+        key_bytes = key.encode('utf-8')
+        iv_bytes = binascii.unhexlify(iv)
+        
+        # Ensure key is 32 bytes (256 bits) for AES-256
+        if len(key_bytes) != 32:
+            raise ValueError("Key must be 32 bytes (256 bits) for AES-256")
+        
+        # Create AES cipher
+        cipher = AES.new(key_bytes, AES.MODE_CBC, iv_bytes)
+        
+        # Pad data with PKCS7
+        padded_data = pad(data_bytes, AES.block_size)
+        
+        # Encrypt
+        ciphertext = cipher.encrypt(padded_data)
+        
+        # Return base64-encoded ciphertext
+        return base64.b64encode(ciphertext).decode('utf-8')
+    except Exception as e:
+        raise RuntimeError(f"Encryption error: {str(e)}")
+
+def decrypt(data, key, iv):
+    """
+    Decrypt data using AES-256-CBC with PKCS7 padding.
+    
+    Args:
+        data (str): Base64-encoded ciphertext.
+        key (str): The decryption key (UTF-8 encoded).
+        iv (str): The initialization vector (hex-encoded).
+    
+    Returns:
+        str: Decrypted plaintext.
+    """
+    try:
+        # Convert inputs to bytes
+        ciphertext = base64.b64decode(data)
+        key_bytes = key.encode('utf-8')
+        iv_bytes = binascii.unhexlify(iv)
+        
+        # Ensure key is 32 bytes (256 bits) for AES-256
+        if len(key_bytes) != 32:
+            raise ValueError("Key must be 32 bytes (256 bits) for AES-256")
+        
+        # Create AES cipher
+        cipher = AES.new(key_bytes, AES.MODE_CBC, iv_bytes)
+        
+        # Decrypt
+        padded_data = cipher.decrypt(ciphertext)
+        
+        # Unpad PKCS7
+        plaintext = unpad(padded_data, AES.block_size)
+        
+        # Return UTF-8 decoded plaintext
+        return plaintext.decode('utf-8')
+    except Exception as e:
+        raise RuntimeError(f"Decryption error: {str(e)}")
+
+def encrypt_hmac(payload, secret_key):
+    """
+    Compute HMAC-SHA256 of the payload using the secret key.
+    
+    Args:
+        payload (str): The data to hash.
+        secret_key (str): The secret key for HMAC.
+    
+    Returns:
+        str: Hex-encoded HMAC-SHA256 digest.
+    """
+    try:
+        # Convert inputs to bytes
+        payload_bytes = payload.encode('utf-8')
+        secret_key_bytes = secret_key.encode('utf-8')
+        
+        # Compute HMAC-SHA256
+        hmac_obj = hmac.new(secret_key_bytes, payload_bytes, hashlib.sha256)
+        
+        # Return hex-encoded digest
+        return hmac_obj.hexdigest()
+    except Exception as e:
+        raise RuntimeError(f"HMAC error: {str(e)}")
+
+def lambda_handler(event, context):
+    """
+    AWS Lambda handler for cryptographic operations.
+    
+    Args:
+        event (dict): The input event containing operation and parameters.
+        context (object): The Lambda context object.
+    
+    Returns:
+        dict: Response with statusCode and body (JSON string).
+    """
+    try:
+        # Validate event
+        if not isinstance(event, dict):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid event format'})
+            }
+        
+        operation = event.get('operation')
+        if not operation:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing operation'})
+            }
+        
+        # Handle operations
+        if operation == 'encrypt':
+            data = event.get('data')
+            key = event.get('key')
+            iv = event.get('iv')
+            if not all([data, key, iv]):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing data, key, or iv for encrypt'})
+                }
+            result = encrypt(data, key, iv)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': result})
+            }
+        
+        elif operation == 'decrypt':
+            data = event.get('data')
+            key = event.get('key')
+            iv = event.get('iv')
+            if not all([data, key, iv]):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing data, key, or iv for decrypt'})
+                }
+            result = decrypt(data, key, iv)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': result})
+            }
+        
+        elif operation == 'encrypt_hmac':
+            payload = event.get('payload')
+            secret_key = event.get('secret_key')
+            if not all([payload, secret_key]):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing payload or secret_key for encrypt_hmac'})
+                }
+            result = encrypt_hmac(payload, secret_key)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': result})
+            }
+        
+        else:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f'Invalid operation: {operation}'})
+            }
+    
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': f'Internal server error: {str(e)}'})
+}
+
+
+
+
+
 const CryptoJS = require('crypto-js');
 
 const encrypt = (data, key, iv) => {
