@@ -1,33 +1,56 @@
-const CryptoJS = require('crypto-js');
+const AWSXRay = require('aws-xray-sdk');
+AWSXRay.setStreamingThreshold(0);
+const AWS = (process.env.NODE_ENV == 'k8s') ? require('aws-sdk') : AWSXRay.captureAWS(require('aws-sdk'));
 
-const encrypt = (data, key, iv) => {
-    const secret = CryptoJS.enc.Utf8.parse(key);
-    const cipher = CryptoJS.AES.encrypt(data, secret, {
-        iv: CryptoJS.enc.Hex.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        keySize: 256 / 32,
-        padding: CryptoJS.pad.Pkcs7,
-    });
-    return cipher.toString();
-};
+class CloudWatchService {
+    constructor(logGroup) {
+        this.cloudWatchLogs = new AWS.CloudWatchLogs({ apiVersion: '2014-03-28' });
+        this.logGroup = logGroup;
+    }
 
-const decrypt = (data, secret, iv) => {
-    const decrypted = CryptoJS.AES.decrypt(data.toString(), secret, {
-        iv: CryptoJS.enc.Hex.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        keySize: 256 / 32,
-        padding: CryptoJS.pad.Pkcs7,
-    });
-    return decrypted.toString(CryptoJS.enc.Utf8);
-};
+    isExistsLogStream = async () => {
+        const logStream = this.today();
+        const params = {
+            logGroupName: this.logGroup,
+            limit: 1,
+            logStreamNamePrefix: logStream,
+        };
+        const result = await this.cloudWatchLogs.describeLogStreams(params).promise();
+        return result && result.logStreams && result.logStreams.length > 0;
+    };
 
-const encryptHmac = (payload, secretKey) => {
-    return CryptoJS.HmacSHA256(payload, secretKey).toString();
-};
+    createLogStream = async () => {
+        const streamName = this.today();
+        const params = {
+            logGroupName: this.logGroup,
+            logStreamName: streamName,
+        };
+        return await this.cloudWatchLogs.createLogStream(params).promise();
+    };
 
-const CryptoService = {
-    encrypt,
-    decrypt,
-    encryptHmac,
-};
-module.exports = CryptoService;
+    writeLog = async (message) => {
+        const result = await this.isExistsLogStream();
+        if (!result) {
+            await this.createLogStream();
+        }
+
+        const streamName = this.today();
+        const params = {
+            logEvents: [
+                {
+                    message: message,
+                    timestamp: Date.now(),
+                },
+            ],
+            logGroupName: this.logGroup,
+            logStreamName: streamName,
+        };
+        await this.cloudWatchLogs.putLogEvents(params).promise();
+    };
+
+    today = () => {
+        const date = new Date();
+        return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    };
+}
+module.exports = CloudWatchService;
