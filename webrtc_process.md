@@ -151,220 +151,830 @@ Our WebSocket signaling server is now used to facilitate communication between b
 
 
 
-import json
-import logging
-import boto3
-from controller.dynamoDBservice import DynamoDBService
+// import React, { useRef, useState, useEffect } from 'react';
+// import {
+//   View,
+//   Text,
+//   TextInput,
+//   TouchableOpacity,
+//   Alert,
+// } from 'react-native';
+// import {
+//   RTCPeerConnection,
+//   RTCIceCandidate,
+// } from 'react-native-webrtc';
+// const App = () => {
+//   const [userId] = useState(Math.round(Math.random() * 1000000).toString());
+//   const [roomName, setRoomName] = useState(null);
+//   const [otherUserId, setOtherUserId] = useState(null);
+//   const [isJoined, setIsJoined] = useState(false);
+//   const [iceCandidatesGenerated, setIceCandidatesGenerated] = useState([]);
+//   const [iceCandidatesReceivedBuffer, setIceCandidatesReceivedBuffer] = useState([]);
+//   const [channelName, setChannelName] = useState('');
+//   const [message, setMessage] = useState('');
+//   const [answer, setAnswer] = useState(null);
+//   const [canISend, setCanISend] = useState(false);
+//   const [canISendIce, setCanISendIce] = useState(false);
+//   const pc = useRef(null);
+//   const dataChannel = useRef(null);
+//   const wsConnection = useRef(null);
+//   useEffect(() => {
+//     if(isJoined===true){
+//       startWebRTCProcess();
+//     }
+//   },[isJoined]);
+//   useEffect(() => {
+//     if (canISend === true) {
+//       sendAnswer(answer);
+//     }
+//   }, [canISend]);
+//   useEffect(() => {
+//     if (canISendIce === true) {
+//       sendIceCandidates(iceCandidatesGenerated);
+//     }
+//   }, [canISendIce]);
+//   function createPeerConnectionObject() {
+//     pc.current = new RTCPeerConnection({
+//       iceServers:[
+//       {
+//         urls: [
+//           'stun:stun.l.google.com:19302',
+//           'stun:stun2.l.google.com:19302',
+//           'stun:stun3.l.google.com:19302',
+//           'stun:stun4.l.google.com:19302',
+//         ],
+//       },
+//     ]});
+//     pc.current.onconnectionstatechange = () => {
+//       console.log('connection state changed to: ', pc.current.connectionState);
+//       if (pc.current.connectionState === 'connected') {
+//         Alert.alert(
+//           'YOU HAVE DONE IT! A WEBRTC CONNECTION HAS BEEN MADE BETWEEN YOU AND THE OTHER PEER'
+//         );
+//       }
+//     };
+//     pc.current.onsignalingstatechange = () => {
+//       console.log(`Signaling state changed to: ${pc.current.signalingState}`);
+//     };
+//     pc.current.onicecandidate = (e) => {
+//       if (e.candidate) {
+//         console.log('ICE:', e.candidate);
+//         setIceCandidatesGenerated((prev) => [...prev, e.candidate]);
+//       }else {
+//         setCanISendIce(true);
+//       }
+//     };
+//   }
+//   function createDataChannel(isOfferor) {
+//     if (isOfferor) {
+//       dataChannel.current = pc.current.createDataChannel('top-secret-chat-room');
+//     } 
+//     else {
+//       pc.current.ondatachannel = (e) => {
+//         dataChannel.current = e.channel;
+//       };
+//     }
+//     dataChannel.current.onmessage = (e) => {
+//       console.log('message has been received from a Data Channel');
+//       const msg = e.data;
+//       console.log(msg);
+//     };
+//     dataChannel.current.onclose = (e) => {
+//       console.log("The 'close' event was fired on your data channel object");
+//     };
+//     dataChannel.current.onopen = () => {
+//       console.log(
+//         'Data Channel has been opened. You are now ready to send/receive messsages over your Data Channel'
+//       );
+//     };
+//   }
+//   function joinRoom(roomName, userId) {
+//     const message = {
+//       label: 'NORMAL_SERVER_PROCESS',
+//       data: {
+//         type: "JOIN_ROOM_REQUEST",
+//         roomName,
+//         userId,
+//       },
+//     };
+//     wsConnection.current.send(JSON.stringify(message));
+//   }
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+//   function sendAnswer(answer) {
+//     const message = {
+//       label:'WEBRTC_PROCESS',
+//       data: {
+//         type: "ANSWER",
+//         answer,
+//         otherUserId: otherUserId,
+//       },
+//     };
+//     wsConnection.current.send(JSON.stringify(message));
+//   }
+//   function sendOffer(offer) {
+//     const message = {
+//       label: 'WEBRTC_PROCESS',
+//       data: {
+//         type: 'OFFER',
+//         offer,
+//         otherUserId: otherUserId,
+//       },
+//     };
+//     wsConnection.current.send(JSON.stringify(message));
+//   }
+//   function sendIceCandidates(arrayOfIceCandidates) {
+//     const message = {
+//       label: 'WEBRTC_PROCESS',
+//       data: {
+//         type: "ICE_CANDIDATES",
+//         candidatesArray: arrayOfIceCandidates,
+//         otherUserId: otherUserId,
+//       },
+//     };
+//     wsConnection.current.send(JSON.stringify(message));
+//   }
+//   async function handleOffer(data) {
+//     createPeerConnectionObject();
+//     createDataChannel(false);
+//     await pc.current.setRemoteDescription(data.offer);
+//     let currentAnswer = await pc.current.createAnswer();
+//     await pc.current.setLocalDescription(currentAnswer);
+//     setAnswer(currentAnswer);
+//     setCanISend(true);
+//   }
+//   async function handleAnswer(data) {
+//     await pc.current.setRemoteDescription(data.answer);
+//     for (const candidate of iceCandidatesReceivedBuffer) {
+//       await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+//     }
+//     setIceCandidatesReceivedBuffer([]);
+//   }
+//   async function startWebRTCProcess (){
+//     createPeerConnectionObject();
+//     const offer = await pc.current.createOffer();
+//     console.log(offer);
+//     await pc.current.setLocalDescription(offer);
+//     console.log("Here is Pc after setting local description:-->",pc.current);
+//     createDataChannel(true);
+//     sendOffer(offer);
+//   };
+//   function handleIceCandidates(data) {
+//     if (pc.current.remoteDescription) {
+//       try {
+//         data.candidatesArray.forEach((candidate) => {
+//           pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+//         });
+//       } catch (error) {
+//         console.log('Error trying to add an ice candidate to the pc object', error);
+//       }
+//     } else {
+//       setIceCandidatesReceivedBuffer((prev) => [
+//         ...prev,
+//         ...data.candidatesArray.map((c) => c),
+//       ]);
+//     }
+//   }
+//   function websockethandler() {
+//     wsConnection.current = new WebSocket(`ws://10.0.2.2:8080/?userId=${userId}`);
+//     wsConnection.current.onopen = () => {
+//       console.log('You have connected with our websocket server');
+//       wsConnection.current.onmessage =(incomingMessageEventObject)=>{
+//         const message = JSON.parse(incomingMessageEventObject.data);
+//         if(message.label=='NORMAL_SERVER_PROCESS'){
+//           if(message.data.type=='JOIN_ROOM_RESPONSE_SUCCESS'){
+//             setOtherUserId(message.data.creatorId);
+//             setRoomName(message.data.roomName);
+//             setIsJoined(true);
+//             console.log('Join room successful');
+//           }
+//           else if(message.data.type=='JOIN_ROOM_NOTIFY'){
+//             console.log(`User ${message.data.joinUserId} has joined your room`);
+//             setOtherUserId(message.data.joinUserId);
+//           }
+//         }
+//         else{
+//           if(message.data.type=='OFFER'){
+//             handleOffer(message.data);
+//           }
+//           else if(message.data.type=='ANSWER'){
+//             handleAnswer(message.data);
+//           }
+//           else{
+//             handleIceCandidates(message.data);
+//           }
+//         }
+//       }
+//       wsConnection.current.onclose = ()=> console.log('You have been disconnected from our ws server');
+//       wsConnection.current.onerror = ()=>console.log("Some sort of error occured");
+//     };
+//   }
+//   async function createRoom(roomName, userId) {
+//     try{
+//       let res = await fetch('http://10.0.2.2:8080/create-room', {
+//         method: 'POST',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//         body: JSON.stringify({roomName, userId}),
+//       })
+//       let resObj = await res.json();
+//       if (resObj.data.type === 'CHECK_ROOM_RESPONSE_SUCCESS') {
+//         setRoomName(roomName);
+//         console.log('Room created successfully.');
+//       }else{
+//         console.log("Room is not created successfully.");
+//       }
+//     }catch(error){
+//       console.log("Some sort of error has been occured:->",error);
+//     }
+//   }
+//   return (
+//     <View>
+//       <Text>WebRTC Chat Room (User ID: {userId})</Text>
+//       <TextInput
+//         placeholder="Enter room name"
+//         value={channelName}
+//         onChangeText={setChannelName}
+//       />
+//       <View>
+//         <TouchableOpacity onPress={() => createRoom(channelName, userId)}><Text>Create Room</Text></TouchableOpacity>
+//         <TouchableOpacity onPress={() => joinRoom(channelName, userId)}><Text>Join Room</Text></TouchableOpacity>
+//         <TouchableOpacity onPress={() => websockethandler()}><Text>Start WebSocket</Text></TouchableOpacity>
+//       </View>
+//       <TextInput
+//         placeholder="Type a message..."
+//         value={message}
+//         onChangeText={setMessage}
+//       />
+//       <TouchableOpacity onPress={() => dataChannel.current.send(message) }><Text>Send</Text></TouchableOpacity>
+//     </View>
+//   );
+// };
+// export default App;
 
-def lambda_handler(event, context):
-    try:
-        # Initialize DynamoDB service
-        service = DynamoDBService.get_instance(region=boto3.Session().region_name)
 
-        # Validate event parameters
-        action = event.get('action')
-        params = event.get('params', {})
-        if not action:
-            raise ValueError("Missing 'action' parameter in event")
 
-        # Log the action being performed
-        logger.info(f"Processing action: {action}")
 
-        # Handle different DynamoDB actions
-        if action == 'get':
-            params['TableName'] = 'fcms-screens-dm'
-            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
-            result = service.get(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
 
-        elif action == 'update':
-            params['TableName'] = 'fcms-screens-dm'
-            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
-            params['UpdateExpression'] = 'SET playingInformation = :pi'
-            params['ExpressionAttributeValues'] = {':pi': {'M': {'status': {'S': 'active'}}}}
-            result = service.update(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from 'react-native';
+import {
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  setLocalDescription,
+  setRemoteDescription
+} from 'react-native-webrtc';
 
-        elif action == 'put':
-            params['TableName'] = 'fcms-screens-dm'
-            params['Item'] = {
-                'screenId': {'S': 'b5-9f-3z-8a-c3-87'},
-                'playingInformation': {'M': {'status': {'S': 'active'}}}
-            }
-            result = service.put(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+const type = {
+  ROOM_CREATE: {
+    RESPONSE_FAILURE: 'CHECK_ROOM_RESPONSE_FAILURE',
+    RESPONSE_SUCCESS: 'CHECK_ROOM_RESPONSE_SUCCESS',
+  },
+  ROOM_DESTROY: {
+    RESPONSE_FAILURE: 'DESTROY_ROOM_RESPONSE_FAILURE',
+    RESPONSE_SUCCESS: 'DESTORY_ROOM_RESPONSE_SUCCESS',
+  },
+  ROOM_JOIN: {
+    RESPONSE_FAILURE: 'JOIN_ROOM_RESPONSE_FAILURE',
+    RESPONSE_SUCCESS: 'JOIN_ROOM_RESPONSE_SUCCESS',
+    REQUEST: 'JOIN_ROOM_REQUEST',
+    NOTIFY: 'JOIN_ROOM_NOTIFY',
+  },
+  ROOM_EXIT: {
+    REQUEST: 'EXIT_ROOM_REQUEST',
+    NOTIFY: 'EXIT_ROOM_NOTIFY',
+  },
+  ROOM_DISONNECTION: {
+    NOTIFY: 'DISCONNECT_ROOM_NOTIFICATION',
+  },
+  WEB_RTC: {
+    OFFER: 'OFFER',
+    ANSWER: 'ANSWER',
+    ICE_CANDIDATES: 'ICE_CANDIDATES',
+  },
+};
 
-        elif action == 'batch_get':
-            params['RequestItems'] = {
-                'fcms-screens-dm': {
-                    'Keys': [
-                        {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
-                    ]
-                }
-            }
-            result = service.batch_get(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+const labels = {
+  NORMAL_SERVER_PROCESS: 'NORMAL_SERVER_PROCESS',
+  WEBRTC_PROCESS: 'WEBRTC_PROCESS',
+};
 
-        elif action == 'query':
-            params = {
-                'TableName': 'fcms-screens-dm',
-                'KeyConditionExpression': 'screenId = :v1',
-                'ExpressionAttributeValues': {':v1': {'S': 'b7-9c-3d-8a-c1-86'}},
-                'ProjectionExpression': 'screenId, playingInformation'
-            }
-            result = service.query(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+const webRTCConfiguratons = {
+  iceServers: [
+    {
+      urls: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun3.l.google.com:19302',
+        'stun:stun4.l.google.com:19302',
+      ],
+    },
+  ],
+};
 
-        elif action == 'batch_write':
-            params = {
-                'RequestItems': {
-                    'fcms-screens-dm': [
-                        {
-                            'PutRequest': {
-                                'Item': {
-                                    'screenId': {'S': 'example1'},
-                                    'data': {'S': 'value1'}
-                                }
-                            }
-                        },
-                        {
-                            'DeleteRequest': {
-                                'Key': {'screenId': {'S': 'example2'}}
-                            }
-                        }
-                    ]
-                }
-            }
-            result = service.batch_write(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+const App = () => {
+  const [userId] = useState(Math.round(Math.random() * 1000000).toString());
+  const [roomName, setRoomName] = useState(null);
+  const [otherUserId, setOtherUserId] = useState(null);
+  const [isJoined, setIsJoined] = useState(false);
+  const [iceCandidatesGenerated, setIceCandidatesGenerated] = useState([]);
+  const [iceCandidatesReceivedBuffer, setIceCandidatesReceivedBuffer] = useState(
+    []
+  );
+  const [channelName, setChannelName] = useState('');
+  const [message, setMessage] = useState('');
+  const [answer, setAnswer] = useState(null);
+  const [canISend, setCanISend] = useState(false);
+  const [canISendIce, setCanISendIce] = useState(false);
+  const pc = useRef(null);
+  const dataChannel = useRef(null);
+  const wsConnection = useRef(null);
 
-        elif action == 'scan':
-            params = {
-                'TableName': 'fcms-screens-dm',
-                'FilterExpression': 'playingInformation.#status = :active',
-                'ExpressionAttributeNames': {'#status': 'status'},
-                'ExpressionAttributeValues': {':active': {'S': 'active'}}
-            }
-            result = service.scan(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+  function handleClose() {
+    console.log('You have been disconnected from our ws server');
+  }
 
-        elif action == 'transact_write':
-            params = {
-                'TransactItems': [
-                    {
-                        'Put': {
-                            'TableName': 'fcms-screens-dm',
-                            'Item': {
-                                'screenId': {'S': 'example3'},
-                                'data': {'S': 'value3'}
-                            }
-                        }
-                    },
-                    {
-                        'Delete': {
-                            'TableName': 'fcms-screens-dm',
-                            'Key': {'screenId': {'S': 'example4'}}
-                        }
-                    }
-                ]
-            }
-            result = service.transact_write_items(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+  function handleError() {
+    console.log(
+      'An error was thrown while listening on onerror event on websocket'
+    );
+  }
 
-        elif action == 'delete':
-            params['TableName'] = 'fcms-screens-dm'
-            params['Key'] = {'screenId': {'S': 'b7-9c-3d-8a-c1-86'}}
-            result = service.delete(params)
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result)
-            }
+  useEffect(() => {
+    if (isJoined === true && roomName !== null && otherUserId !== null) {
+      startWebRTCProcess();
+    }
+  }, [isJoined]);
 
-        else:
-            raise ValueError(f"Unsupported action: {action}")
+  useEffect(() => {
+    console.log("iceCandidateReceivedBuffer:--->",iceCandidatesReceivedBuffer);
+    if(iceCandidatesReceivedBuffer.length>0) console.log('IceCandidatesReceivedBuffer is updated.', iceCandidatesReceivedBuffer);
+  }, [iceCandidatesReceivedBuffer]);
 
-    except Exception as e:
-        logger.error(f"Error processing action {action}: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+  useEffect(() => {
+    console.log("iceCandidateGenerated:-->",iceCandidatesGenerated);
+    if(iceCandidatesGenerated.length>0) console.log('All ICE candidates so far:', iceCandidatesGenerated);
+  }, [iceCandidatesGenerated]);
+
+  useEffect(() => {
+    if (canISend === true) {
+      console.log("Here i am sending answer.");
+      sendAnswer(answer);
+    }
+  }, [canISend]);
+
+  useEffect(() => {
+    if (canISendIce === true) {
+      console.log('Here is updated iceCandidatesGenerated array:-->', iceCandidatesGenerated);
+      sendIceCandidates(iceCandidatesGenerated);
+    }
+  }, [canISendIce]);
+
+  function joinSuccessHandler(data) {
+    setOtherUserId(data.creatorId);
+    setRoomName(data.roomName);
+    setIsJoined(true);
+  }
+
+  function joinNotificationHandler(data) {
+    Alert.alert(`User ${data.joinUserId} has joined your room`);
+    setOtherUserId(data.joinUserId);
+  }
+
+  function updateUiForRemainingUser() {
+    Alert.alert('A user has left your room');
+    setOtherUserId(null);
+  }
+
+  function closePeerConnection() {
+    if (pc.current) {
+      pc.current.close();
+      pc.current = null;
+      dataChannel.current = null;
+      console.log("You have closed your peer connection by calling the 'close()' method");
+    }
+  }
+
+  function exitNotificationHandler(data) {
+    updateUiForRemainingUser();
+    closePeerConnection();
+  }
+
+  function normalServerProcessing(data) {
+    switch (data.type) {
+      case type.ROOM_JOIN.RESPONSE_SUCCESS:
+        joinSuccessHandler(data);
+        Alert.alert('Join room successful');
+        break;
+      case type.ROOM_JOIN.RESPONSE_FAILURE:
+        console.log('join room failed');
+        break;
+      case type.ROOM_JOIN.NOTIFY:
+        joinNotificationHandler(data);
+        break;
+      case type.ROOM_EXIT.NOTIFY:
+        exitNotificationHandler(data);
+        break;
+      case type.ROOM_DISONNECTION.NOTIFY:
+        exitNotificationHandler(data);
+        break;
+      default:
+        console.log('unknown data type: ', data.type);
+    }
+  }
+
+  const startWebRTCProcess = async () => {
+    createPeerConnectionObject();
+    const offer = await pc.current.createOffer();
+    await pc.current.setLocalDescription(offer);
+    createDataChannel(true);
+    console.log("Here is reaching here",pc.current);
+    sendOffer(offer);
+  };
+  function createPeerConnectionObject() {
+    pc.current = new RTCPeerConnection(webRTCConfiguratons);
+    console.log(pc.current);
+    pc.current.onconnectionstatechange = () => {
+      console.log('connection state changed to: ', pc.current.connectionState);
+      if (pc.current.connectionState === 'connected') {
+        Alert.alert(
+          'YOU HAVE DONE IT! A WEBRTC CONNECTION HAS BEEN MADE BETWEEN YOU AND THE OTHER PEER'
+        );
+      }
+    };
+    pc.current.onsignalingstatechange = () => {
+      console.log(`Signaling state changed to: ${pc.current.signalingState}`);
+    };
+    pc.current.onicecandidate = (e) => {
+      console.log("Here ice candidate will generate.");
+      if (e.candidate) {
+        console.log('ICE:', e.candidate);
+        setIceCandidatesGenerated((prev) => [...prev, e.candidate]);
+      } else {
+        setCanISendIce(true);
+      }
+    };
+  }
+
+  function createDataChannel(isOfferor) {
+    if (isOfferor) {
+      const dataChannelOptions = {
+        ordered: false, 
+        maxRetransmits: 0
+    };
+      dataChannel.current = pc.current.createDataChannel(
+        'top-secret-chat-room',
+        dataChannelOptions
+      );
+      console.log("Here is datachannel--:",dataChannel.current);
+      console.log("Here i am creating dataChannel:----->",dataChannel);
+      registerDataChannelEventListeners();
+    } else {
+      pc.current.ondatachannel = (e) => {
+        console.log('Data channel received:', e);
+        dataChannel.current = e.channel;
+        registerDataChannelEventListeners();
+      };
+    }
+  }
+  function registerDataChannelEventListeners() {
+    dataChannel.current.onmessage = (e) => {
+      console.log('message has been received from a Data Channel');
+      const msg = e.data;
+      console.log(msg);
+    };
+    dataChannel.current.onclose = (e) => {
+      console.log("The 'close' event was fired on your data channel object");
+    };
+    dataChannel.current.onopen = (e) => {
+      console.log(
+        'Data Channel has been opened. You are now ready to send/receive messsages over your Data Channel'
+      );
+    };
+  }
+
+  function joinRoom(roomName, userId) {
+    const message = {
+      label: labels.NORMAL_SERVER_PROCESS,
+      data: {
+        type: type.ROOM_JOIN.REQUEST,
+        roomName,
+        userId,
+      },
+    };
+    wsConnection.current.send(JSON.stringify(message));
+  }
+
+  function exitRoom(roomName, userId) {
+    const message = {
+      label: labels.NORMAL_SERVER_PROCESS,
+      data: {
+        type: type.ROOM_EXIT.REQUEST,
+        roomName,
+        userId,
+      },
+    };
+    wsConnection.current.send(JSON.stringify(message));
+  }
+
+  function sendAnswer(answer) {
+    console.log('Here i am sending answer to -->', otherUserId);
+    const message = {
+      label: labels.WEBRTC_PROCESS,
+      data: {
+        type: type.WEB_RTC.ANSWER,
+        answer,
+        otherUserId: otherUserId,
+      },
+    };
+    wsConnection.current.send(JSON.stringify(message));
+  }
+
+  function sendOffer(offer) {
+    const message = {
+      label: labels.WEBRTC_PROCESS,
+      data: {
+        type: type.WEB_RTC.OFFER,
+        offer,
+        otherUserId: otherUserId,
+      },
+    };
+    wsConnection.current.send(JSON.stringify(message));
+  }
+
+  function sendIceCandidates(arrayOfIceCandidates) {
+    const message = {
+      label: labels.WEBRTC_PROCESS,
+      data: {
+        type: type.WEB_RTC.ICE_CANDIDATES,
+        candidatesArray: arrayOfIceCandidates,
+        otherUserId: otherUserId,
+      },
+    };
+    wsConnection.current.send(JSON.stringify(message));
+  }
+
+  async function handleOffer(data) {
+    console.log("I am getting offer here.");
+    createPeerConnectionObject();
+    createDataChannel(false);
+    await pc.current.setRemoteDescription(data.offer);
+    let currentAnswer = await pc.current.createAnswer();
+    console.log("Here i am setting localDescription.");
+    await pc.current.setLocalDescription(currentAnswer);
+    console.log("Helo control is reaching here.",currentAnswer);
+    setAnswer(currentAnswer);
+    setCanISend(true);
+  }
+  async function handleAnswer(data) {
+    await pc.current.setRemoteDescription(data.answer);
+    for (const candidate of iceCandidatesReceivedBuffer) {
+      console.log('Adding ice candidates.');
+      await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+    setIceCandidatesReceivedBuffer([]);
+  }
+  function handleIceCandidates(data) {
+    if (pc.current.remoteDescription) {
+      try {
+        data.candidatesArray.forEach((candidate) => {
+          pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+      } catch (error) {
+        console.log('Error trying to add an ice candidate to the pc object', error);
+      }
+    } else {
+      setIceCandidatesReceivedBuffer((prev) => [
+        ...prev,
+        ...data.candidatesArray.map((c) => c),
+      ]);
+    }
+  }
+  function webRTCServerProcessing(data) {
+    switch (data.type) {
+      case type.WEB_RTC.OFFER:
+        handleOffer(data);
+        break;
+      case type.WEB_RTC.ANSWER:
+        handleAnswer(data);
+        console.log('Answer is received here it is:-->', data.answer);
+        break;
+      case type.WEB_RTC.ICE_CANDIDATES:
+        console.log(
+          'Ice candidates are received from other peer.You can see them here--->',
+          data
+        );
+        handleIceCandidates(data);
+        break;
+      default:
+        console.log('Unknown data type: ', data.type);
+    }
+  }
+
+  function handleMessage(incomingMessageEventObject) {
+    const message = JSON.parse(incomingMessageEventObject.data);
+    console.log(message);
+    switch (message.label) {
+      case labels.NORMAL_SERVER_PROCESS:
+        normalServerProcessing(message.data);
+        break;
+      case labels.WEBRTC_PROCESS:
+        webRTCServerProcessing(message.data);
+        break;
+      default:
+        console.log('unknown server processing label: ', message.label);
+    }
+  }
+
+  function registerSocketEvents() {
+    wsConnection.current.onopen = () => {
+      console.log('You have connected with our websocket server');
+      wsConnection.current.onmessage = handleMessage;
+      wsConnection.current.onclose = handleClose;
+      wsConnection.current.onerror = handleError;
+    };
+  }
+
+  function websockethandler() {
+    console.log('Hello');
+    wsConnection.current = new WebSocket(`ws://10.0.2.2:8080/?userId=${userId}`); // Use 10.0.2.2 for Android emulator
+    registerSocketEvents();
+  }
+
+  useEffect(() => {
+    console.log('RoomName is set.');
+  }, [roomName]);
+
+  function createRoom(roomName, userId) {
+    console.log('Here i have created roomName:->', roomName);
+    fetch('http://10.0.2.2:8080/create-room', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ roomName, userId }),
+    })
+      .then((response) => response.json())
+      .then((resObj) => {
+        if (resObj.data.type === type.ROOM_CREATE.RESPONSE_SUCCESS) {
+          setRoomName(roomName);
+          Alert.alert('Room created successfully.');
         }
-  
-
-
-
-
-
-
-
-import json
-import logging
-import boto3
-from controller.dynamoDBservice import DynamoDBService
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def lambda_handler(event, context):
-    try:
-        # Initialize DynamoDB service
-        service = DynamoDBService.get_instance(region=boto3.Session().region_name)
-
-        # Validate event parameters
-        action = event.get('action')
-        params = event.get('params', {})
-        if not action or action != 'scan':
-            raise ValueError("Only 'scan' action is supported")
-
-        # Log the action being performed
-        logger.info("Processing scan action")
-
-        # Perform scan operation
-        params = {
-            'TableName': 'fcms-screens-dm',
-            'FilterExpression': 'playingInformation.#status = :active',
-            'ExpressionAttributeNames': {'#status': 'status'},
-            'ExpressionAttributeValues': {':active': {'S': 'active'}}
+        if (resObj.data.type === type.ROOM_CREATE.RESPONSE_FAILURE) {
+          console.log('Create Room Failure->', resObj.data.message);
         }
-        result = service.scan(params)
-        return {
-            'statusCode': 200,
-            'body': json.dumps(result)
-        }
+      })
+      .catch((err) => {
+        console.log('an error ocurred trying to create a room:-> ', err);
+      });
+  }
 
-    except Exception as e:
-        logger.error(f"Error processing scan action: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+  function destroyRoom(roomName) {
+    fetch('http://10.0.2.2:8080/destroy-room', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ roomName }),
+    })
+      .then((response) => response.json())
+      .then((resObj) => {
+        if (resObj.data.type === type.ROOM_DESTROY.RESPONSE_SUCCESS) {
+          setRoomName(null);
+          setOtherUserId(null);
         }
+        if (resObj.data.type === type.ROOM_DESTROY.RESPONSE_FAILURE) {
+          console.log(resObj.data.message);
+        }
+      })
+      .catch((err) => {
+        console.log('an error ocurred trying to destroy a room: ', err);
+      });
+  }
+
+  function handleSendMessage(message) {
+    dataChannel.current.send(message);
+  }
+
+  function handleExitRoom() {
+    exitRoom(roomName, userId);
+    setRoomName(null);
+    setOtherUserId(null);
+    closePeerConnection();
+  }
+
+  function handleJoinRoom() {
+    if (!channelName) {
+      return Alert.alert('You have to join a room with a valid name');
+    }
+    joinRoom(channelName, userId);
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>WebRTC Chat Room (User ID: {userId})</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter room name"
+        value={channelName}
+        onChangeText={setChannelName}
+      />
+      {otherUserId !== null && (
+        <Text style={styles.text}>Other User ID: {otherUserId}</Text>
+      )}
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => createRoom(channelName, userId)}
+        >
+          <Text style={styles.buttonText}>Create Room</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => destroyRoom(channelName)}
+        >
+          <Text style={styles.buttonText}>Destroy Room</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => handleJoinRoom(roomName)}
+        >
+          <Text style={styles.buttonText}>Join Room</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.button} onPress={() => handleExitRoom()}>
+          <Text style={styles.buttonText}>Exit Room</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => websockethandler()}>
+          <Text style={styles.buttonText}>Start WebSocket</Text>
+        </TouchableOpacity>
+      </View>
+      <TextInput
+        style={styles.input}
+        placeholder="Type a message..."
+        value={message}
+        onChangeText={setMessage}
+      />
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => handleSendMessage(message)}
+      >
+        <Text style={styles.buttonText}>Send</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#fff',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 5,
+  },
+  text: {
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 10,
+    borderRadius: 5,
+    flex: 1,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+export default App;
+
 
