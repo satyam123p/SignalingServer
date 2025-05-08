@@ -1,6 +1,272 @@
 import json
 import os
 import logging
+import psycopg2
+from datetime import datetime
+from common_const import SCREEN_ERRORS
+from sqs_service import SQSService
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+class DMSService:
+    _instance = None
+    SET_VALUES = ['DeviceName', 'DeviceMemo', 'Location', 'VXCheckInTime', 'VXCheckOutTime']
+    MAX_GROUP_COUNT = 100
+    
+    @classmethod
+    def get_instance(cls, params):
+        if cls._instance is None:
+            cls._instance = cls(params)
+        return cls._instance
+    
+    def __init__(self, params):
+        self.dms_database = params.get('db')
+        self.notification_sqs_url = params.get('notification_sqs_url')
+        self.logger = params.get('logger', logger)
+        self.sqs_service = SQSService(params.get('region', 'us-east-1'))
+    
+    def get_error_message(self, state, screen_type, settings_unavailable, standby_mode, is_connected, include_display_orientation):
+        curr_state = 'Failed from server'
+        if state == 'deactivated':
+            curr_state = SCREEN_ERRORS['SCREEN_DEACTIVATED']
+        elif screen_type == 'unknown':
+            curr_state = SCREEN_ERRORS['SCREEN_NOT_PAIRED']
+        elif standby_mode:
+            curr_state = SCREEN_ERRORS['SCREEN_STANDBY_MODE']
+        elif settings_unavailable:
+            curr_state = SCREEN_ERRORS['SCREEN_SETTINGS_UNAVAILABLE']
+        elif not is_connected:
+            curr_state = SCREEN_ERRORS['SCREEN_OFFLINE']
+        elif include_display_orientation:
+            curr_state = SCREEN_ERRORS['SCREEN_NOT_SUPPORT']
+        return curr_state
+    
+    def is_include_power_on(self, set_data):
+        data = set_data.get('data', []) if isinstance(set_data, dict) else set_data or []
+        return any(item.get('name') == 'PowerOn' for item in data)
+    
+    def is_include_orientation(self, set_data):
+        data = set_data.get('data', []) if isinstance(set_data, dict) else set_data or []
+        return any(item.get('name') == 'DisplayOrientation' for item in data)
+    
+    def filter_by_state(self, screens, fail_list, fail_message_list, include_power_on=False, include_display_orientation=False, type=None):
+        for screen in screens:
+            screen_id = screen.get('screen_id')
+            state = screen.get('state')
+            screen_type = screen.get('screen_type')
+            standby_mode = screen.get('standby_mode', False)
+            settings_unavailable = screen.get('settings_unavailable', False)
+            updated_time = screen.get('updated_time')
+            agent_type = screen.get('agent_type')
+            
+            is_connected = (datetime.now().timestamp() - datetime.fromisoformat(updated_time).timestamp()) < 600
+            
+            if (state != 'activated' or
+                screen_type == 'unknown' or
+                (not include_power_on and standby_mode) or
+                (settings_unavailable and type and type.lower() == 'multi-control') or
+                (not is_connected and screen_type and screen_type.upper() != 'WALL') or
+                (agent_type == 'SSSP' and include_display_orientation)):
+                fail_list.append(screen_id)
+                fail_message_list.append(self.get_error_message(
+                    state, screen_type, settings_unavailable, standby_mode, is_connected, include_display_orientation
+                ))
+    
+    async def get_screens_filter_by_state(self, screens, notification, type=None, set_data=None):
+        return_screens = []
+        fail_list = []
+        fail_message_list = []
+        groups = [screens[i:i + self.MAX_GROUP_COUNT] for i in range(0, len(screens), self.MAX_GROUP_COUNT)]
+        
+        include_power_on = self.is_include_power_on(set_data) if set_data else False
+        include_display_orientation = self.is_include_orientation(set_data) if set_data else False
+        
+        for group in groups:
+            rows = await self.get_screens([s['screen_id'] for s in group])
+            if set_data and 'data' in set_data and set_data['data'] and not any(item['name'] in self.SET_VALUES for item in set_data['data']):
+                self.filter_by_state(rows, fail_list, fail_message_list, include_power_on, include_display_orientation, type)
+            
+            if fail_list:
+                self.logger.info(f"[FAIL-LIST] {fail_list}")
+                self.logger.info(f"[FAIL-MESSAGE-LIST] {fail_message_list}")
+                screens = [s for s in screens if s['screen_id'] not in fail_list]
+                return_screens.extend([r for r in rows if r['screen_id'] not in fail_list])
+                
+                for fail_id, fail_message in zip(fail_list, fail_message_list):
+                    await self.send_notification({
+                        'id': fail_id,
+                        'notification': notification,
+                        'state': 'FAILED',
+                        'fail_message': fail_message
+                    })
+            else:
+                return_screens.extend(rows)
+        
+        return return_screens
+    
+    async def get_screens(self, screen_ids):
+        if not screen_ids:
+            return []
+        
+        placeholders = ','.join([f'${i+1}' for i in range(len(screen_ids))])
+        query = f"""
+            SELECT DS.SCREEN_ID, DS.SCREEN_TYPE, DS.STATE, DS.AGENT_TYPE, DS.STANDBY_MODE,
+                   DSW.PLAYER_STOPPED, DSW.DEFAULT_CONTENT, DSW.NOW_PLAYING, DSW.SETTINGS_UNAVAILABLE,
+                   DS.UPDATED_TIME
+            FROM DMS_SCREEN DS
+            LEFT JOIN DMS_SCREEN_WARNING DSW ON DS.SCREEN_ID = DSW.SCREEN_ID
+            WHERE DS.SCREEN_ID IN ({placeholders})
+        """
+        try:
+            rows = await self.dms_database.select_rows(text=query, values=screen_ids)
+            return [{
+                'screen_id': row[0],
+                'screen_type': row[1],
+                'state': row[2],
+                'agent_type': row[3],
+                'standby_mode': row[4],
+                'player_stopped': row[5],
+                'default_content': row[6],
+                'now_playing': row[7],
+                'settings_unavailable': row[8],
+                'updated_time': row[9].isoformat()
+            } for row in rows]
+        except Exception as e:
+            self.logger.error(f"Database query failed: {str(e)}")
+            raise
+    
+    async def send_notification(self, params):
+        if params.get('notification'):
+            sqs_params = {
+                'MessageBody': json.dumps({
+                    'messageId': params['notification'].get('message_id'),
+                    'screenId': params['id'],
+                    'type': params['notification'].get('type'),
+                    'messageType': 'NOTIFY',
+                    'state': params['state'],
+                    'target': params['notification'].get('target'),
+                    **({'errorMsg': params['fail_message']} if params.get('fail_message') else {})
+                }),
+                'QueueUrl': self.notification_sqs_url,
+                'MessageGroupId': 'default-group'
+            }
+            try:
+                await self.sqs_service.send_message(sqs_params, log_context={'context': 'DMSService'})
+                self.logger.info(f"[SEND][NOTIFICATION] {sqs_params}")
+            except Exception as e:
+                self.logger.error(f"Failed to send notification: {str(e)}")
+                raise
+
+def lambda_handler(event, context):
+    try:
+        if not isinstance(event, dict):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid event format'})
+            }
+        
+        operation = event.get('operation')
+        if not operation:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Missing operation'})
+            }
+        
+        db = DatabaseClient(
+            host=os.environ.get('DB_HOST'),
+            database=os.environ.get('DB_NAME'),
+            user=os.environ.get('DB_USER'),
+            password=os.environ.get('DB_PASSWORD')
+        )
+        
+        service = DMSService.get_instance({
+            'db': db,
+            'notification_sqs_url': os.environ.get('NOTIFICATION_SQS_URL'),
+            'logger': logger,
+            'region': os.environ.get('AWS_REGION', 'us-east-1')
+        })
+        
+        if operation == 'get_screens_filter_by_state':
+            screens = event.get('screens', [])
+            notification = event.get('notification')
+            type = event.get('type')
+            set_data = event.get('set')
+            if not screens or not notification:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing screens or notification'})
+                }
+            result = service.get_screens_filter_by_state(screens, notification, type, set_data)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': result})
+            }
+        
+        elif operation == 'get_screens':
+            screen_ids = event.get('screen_ids', [])
+            result = service.get_screens(screen_ids)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': result})
+            }
+        
+        elif operation == 'send_notification':
+            params = event.get('params', {})
+            if not params.get('id') or not params.get('notification'):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Missing id or notification in params'})
+                }
+            result = service.send_notification(params)
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'result': 'Notification sent'})
+            }
+        
+        else:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f'Invalid operation: {operation}'})
+            }
+    
+    except Exception as e:
+        logger.error(f"Internal server error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': f'Internal server error: {str(e)}'})
+        }
+
+class DatabaseClient:
+    def __init__(self, host, database, user, password):
+        self.conn = psycopg2.connect(
+            host=host,
+            database=database,
+            user=user,
+            password=password
+        )
+    
+    async def select_rows(self, text, values):
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(text, values)
+                return cur.fetchall()
+        except Exception as e:
+            raise RuntimeError(f"Database query failed: {str(e)}")
+    
+    def __del__(self):
+        if self.conn:
+            self.conn.close()
+
+
+
+
+
+
+
+import json
+import os
+import logging
 import boto3
 import psycopg2
 from datetime import datetime
