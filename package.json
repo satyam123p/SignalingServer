@@ -1,224 +1,243 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import base64
-import hmac
-import hashlib
-import binascii
+import os
 import json
+import boto3
+import pika
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.core import patch_all
+xray_recorder.configure(streaming_threshold=0)
+patch_all()
 
-def encrypt(data, key, iv):
-    """
-    Encrypt data using AES-256-CBC with PKCS7 padding.
-    
-    Args:
-        data (str): The plaintext to encrypt.
-        key (str): The encryption key (UTF-8 encoded).
-        iv (str): The initialization vector (hex-encoded).
-    
-    Returns:
-        str: Base64-encoded ciphertext.
-    """
-    try:
-        # Convert inputs to bytes
-        data_bytes = data.encode('utf-8')
-        key_bytes = key.encode('utf-8')
-        iv_bytes = binascii.unhexlify(iv)
-        
-        # Ensure key is 32 bytes (256 bits) for AES-256
-        if len(key_bytes) != 32:
-            raise ValueError("Key must be 32 bytes (256 bits) for AES-256")
-        
-        # Create AES cipher
-        cipher = AES.new(key_bytes, AES.MODE_CBC, iv_bytes)
-        
-        # Pad data with PKCS7
-        padded_data = pad(data_bytes, AES.block_size)
-        
-        # Encrypt
-        ciphertext = cipher.encrypt(padded_data)
-        
-        # Return base64-encoded ciphertext
-        return base64.b64encode(ciphertext).decode('utf-8')
-    except Exception as e:
-        raise RuntimeError(f"Encryption error: {str(e)}")
-
-def decrypt(data, key, iv):
-    """
-    Decrypt data using AES-256-CBC with PKCS7 padding.
-    
-    Args:
-        data (str): Base64-encoded ciphertext.
-        key (str): The decryption key (UTF-8 encoded).
-        iv (str): The initialization vector (hex-encoded).
-    
-    Returns:
-        str: Decrypted plaintext.
-    """
-    try:
-        # Convert inputs to bytes
-        ciphertext = base64.b64decode(data)
-        key_bytes = key.encode('utf-8')
-        iv_bytes = binascii.unhexlify(iv)
-        
-        # Ensure key is 32 bytes (256 bits) for AES-256
-        if len(key_bytes) != 32:
-            raise ValueError("Key must be 32 bytes (256 bits) for AES-256")
-        
-        # Create AES cipher
-        cipher = AES.new(key_bytes, AES.MODE_CBC, iv_bytes)
-        
-        # Decrypt
-        padded_data = cipher.decrypt(ciphertext)
-        
-        # Unpad PKCS7
-        plaintext = unpad(padded_data, AES.block_size)
-        
-        # Return UTF-8 decoded plaintext
-        return plaintext.decode('utf-8')
-    except Exception as e:
-        raise RuntimeError(f"Decryption error: {str(e)}")
-
-def encrypt_hmac(payload, secret_key):
-    """
-    Compute HMAC-SHA256 of the payload using the secret key.
-    
-    Args:
-        payload (str): The data to hash.
-        secret_key (str): The secret key for HMAC.
-    
-    Returns:
-        str: Hex-encoded HMAC-SHA256 digest.
-    """
-    try:
-        # Convert inputs to bytes
-        payload_bytes = payload.encode('utf-8')
-        secret_key_bytes = secret_key.encode('utf-8')
-        
-        # Compute HMAC-SHA256
-        hmac_obj = hmac.new(secret_key_bytes, payload_bytes, hashlib.sha256)
-        
-        # Return hex-encoded digest
-        return hmac_obj.hexdigest()
-    except Exception as e:
-        raise RuntimeError(f"HMAC error: {str(e)}")
-
-def lambda_handler(event, context):
-    """
-    AWS Lambda handler for cryptographic operations.
-    
-    Args:
-        event (dict): The input event containing operation and parameters.
-        context (object): The Lambda context object.
-    
-    Returns:
-        dict: Response with statusCode and body (JSON string).
-    """
-    try:
-        # Validate event
-        if not isinstance(event, dict):
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Invalid event format'})
-            }
-        
-        operation = event.get('operation')
-        if not operation:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Missing operation'})
-            }
-        
-        # Handle operations
-        if operation == 'encrypt':
-            data = event.get('data')
-            key = event.get('key')
-            iv = event.get('iv')
-            if not all([data, key, iv]):
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({'error': 'Missing data, key, or iv for encrypt'})
-                }
-            result = encrypt(data, key, iv)
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'result': result})
-            }
-        
-        elif operation == 'decrypt':
-            data = event.get('data')
-            key = event.get('key')
-            iv = event.get('iv')
-            if not all([data, key, iv]):
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({'error': 'Missing data, key, or iv for decrypt'})
-                }
-            result = decrypt(data, key, iv)
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'result': result})
-            }
-        
-        elif operation == 'encrypt_hmac':
-            payload = event.get('payload')
-            secret_key = event.get('secret_key')
-            if not all([payload, secret_key]):
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({'error': 'Missing payload or secret_key for encrypt_hmac'})
-                }
-            result = encrypt_hmac(payload, secret_key)
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'result': result})
-            }
-        
+class SQSService:
+    def __init__(self, region=None):
+        self.aws_region = region if region else 'us-east-1'
+        if os.environ.get("NODE_ENV") == "k8s":
+            print('SQSService using ElasticMQ')
+            self.sqs = boto3.client(
+                'sqs',
+                region_name=self.aws_region,
+                endpoint_url='http://elasticmq-sqs:9324'
+            )
         else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': f'Invalid operation: {operation}'})
-            }
-    
-    except Exception as e:
+            print('SQSService using AWS SQS')
+            self.sqs = boto3.client('sqs')
+
+    def getBasicParamSchema(self):
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': f'Internal server error: {str(e)}'})
+            'DelaySeconds': 10,
+            'MessageAttributes': {
+                'Title': {
+                    'DataType': 'String',
+                    'StringValue': 'The Whistler',
+                },
+                'Author': {
+                    'DataType': 'String',
+                    'StringValue': 'John Grisham',
+                },
+                'WeeksOn': {
+                    'DataType': 'Number',
+                    'StringValue': '6',
+                },
+            },
+            'MessageBody': 'Information about current NY Times fiction bestseller for week of 12/11/2016.',
+            'QueueUrl': 'SQS_QUEUE_URL',
+        }
+
+    def sendMessage(self, params, context=None):
+        if self.sqs:
+            log_context = getattr(context, 'logContext', None) if context else None
+            try:
+                if log_context:
+                    params = self.appendMessageAttributes(params, 'logAttributes', log_context)
+                return self.sqs.sendMessage(**params)
+            except Exception as e:
+                print(f"Warning: {e}")
+                return None
+        else:
+            print('There is no way to use queue service.')
+            return None
+
+    def appendMessageAttributes(self, origin_param, key, value):
+        return {
+            **origin_param,
+            'MessageAttributes': {
+                key: {
+                    'DataType': 'String',
+                    'StringValue': json.dumps(value),
+                },
+                **origin_param.get('MessageAttributes', {}),
+            },
+        }
+
+    def publishToQueue(self, channel, queue_name, data):
+        channel.basic_publish(
+            exchange='',
+            routing_key=queue_name,
+            body=json.dumps(data).encode('utf-8')
+        )
+
+    def publishToChannel(self, channel, routing_key, exchange_name, data):
+        channel.basic_publish(
+            exchange=exchange_name,
+            routing_key=routing_key,
+            body=json.dumps(data).encode('utf-8'),
+            properties=pika.BasicProperties(delivery_mode=1)  
+        )
+
+
+const SQSService = require('./sqs.service');
+const { SCREEN_ERRORS } = require('../const/common-const');
+
+const setValues = ['DeviceName', 'DeviceMemo', 'Location', 'VXCheckInTime', 'VXCheckOutTime'];
+
+let instance;
+
+class DMSService {
+    static getInstance = (params) => {
+        if (!instance) {
+            instance = new DMSService(params);
+        }
+        return instance;
+    };
+
+    constructor({ db, notificationSQSUrl, logger, region }) {
+        this.dmsDatabase = db;
+        this.notificationSQSUrl = notificationSQSUrl;
+        this.logger = logger;
+
+        this.sqsService = new SQSService(region);
+
+        this.maxGroupCount = 100;
+    }
+
+    getErrorMessage({ state, screenType, settingsUnavailable, standbyMode, isConnected, includeDisplayOrientation }) {
+        let currState = 'Failed from server';
+        if (state == 'deactivated') {
+            currState = SCREEN_ERRORS.SCREEN_DEACTIVATED;
+        } else if (screenType == 'unknown') {
+            currState = SCREEN_ERRORS.SCREEN_NOT_PAIRED;
+        } else if (standbyMode) {
+            currState = SCREEN_ERRORS.SCREEN_STANDBY_MODE;
+        } else if (settingsUnavailable) {
+            currState = SCREEN_ERRORS.SCREEN_SETTINGS_UNAVAILABLE;
+        } else if (!isConnected) {
+            currState = SCREEN_ERRORS.SCREEN_OFFLINE;
+        } else if (includeDisplayOrientation) {
+            currState = SCREEN_ERRORS.SCREEN_NOT_SUPPORT;
+        }
+        return currState;
+    };
+
+    isIncludePowerOn(set) {
+        const { data = [] } = set || {};
+        if (data && data.length > 0) {
+            const power = data.find(d => d.name === 'PowerOn');
+            return power && power.name === 'PowerOn';
+        } else if (set && set.length > 0) {
+            const power = set.find(d => d.name === 'PowerOn');
+            return power && power.name === 'PowerOn';
+        }
+        return false;
+    }
+
+    isIncludeOrientation(set) {
+        const { data = [] } = set || {};
+        if (data && data.length > 0) {
+            const power = data.find(d => d.name === 'DisplayOrientation');
+            return power && power.name === 'DisplayOrientation';
+        } else if (set && set.length > 0) {
+            const power = set.find(d => d.name === 'DisplayOrientation');
+            return power && power.name === 'DisplayOrientation';
+        }
+        return false;
+    }
+
+    filterByState(screens, failList, failMessageList, includePowerOn = false, includeDisplayOrientation = false, type) {
+        screens.map((screen) => {
+            const { screenId, state, screenType, standbyMode = false, settingsUnavailable, updatedTime, agentType } = screen;
+            const isConnected = (new Date().getTime() - new Date(updatedTime).getTime()) / 1000 < 600;
+            if (state !== 'activated'
+                || screenType === 'unknown'
+                || (!includePowerOn && standbyMode)
+                || (settingsUnavailable && type && type.toLowerCase() === 'multi-control')
+                || (!isConnected && screenType && screenType.toUpperCase() !== 'WALL')
+                || (agentType === 'SSSP' && includeDisplayOrientation)) {
+                failList.push(screenId);
+                failMessageList.push(this.getErrorMessage({ state, screenType, settingsUnavailable, standbyMode, isConnected, includeDisplayOrientation }));
+            }
+        });
+    }
+
+    async getScreensFilterByState(screens, notification, type, set) {
+        let returnScreens = [];
+        const failList = [];
+        const failMessageList = [];
+        const groups = [];
+        if (screens.length > this.maxGroupCount) {
+            for (let i = 0; i < screens.length; i += this.maxGroupCount) {
+                groups.push(screens.slice(i, i + this.maxGroupCount));
+            }
+        } else {
+            groups.push(screens);
+        }
+        let includePowerOn = false, includeDisplayOrientation = false;
+        if (set) {
+            includePowerOn = this.isIncludePowerOn(set);
+            includeDisplayOrientation = this.isIncludeOrientation(set);
+        }
+        for (let group of groups) {
+            const rows = await this.getScreens(group);
+            const { data } = set;
+            if (data && data.length > 0 && !data.some(item => setValues.includes(item.name))) {
+                this.filterByState(rows, failList, failMessageList, includePowerOn, includeDisplayOrientation, type);
+            }
+            if (failList && failList.length > 0) {
+                this.logger.info(`[FAIL-LIST]`, failList);
+                this.logger.info(`[FAIL-MESSAGE-LIST]`, failMessageList);
+                screens = screens.filter(s => !failList.includes(s.screenId));
+                returnScreens = returnScreens.concat(rows.filter(screen => !failList.includes(screen.screenId)));
+                let errorMessageCounter = 0;
+                for (let failId of failList) {
+                    await this.sendNotification({ id: failId, notification, state: 'FAILED', failMessage: failMessageList[errorMessageCounter] });
+                    errorMessageCounter++;
+                }
+            } else {
+                returnScreens = returnScreens.concat(rows);
+            }
+        }
+        return returnScreens;
+    }
+
+    async getScreens(screenIds = []) {
+        const wheres = [];
+        screenIds.forEach((id, index) => wheres.push(`DS.SCREEN_ID = $${Number(index + 1)}`));
+        const query = `SELECT DS.SCREEN_ID, DS.SCREEN_TYPE, DS.STATE, DS.AGENT_TYPE, DS.STANDBY_MODE, DSW.PLAYER_STOPPED, DSW.DEFAULT_CONTENT, DSW.NOW_PLAYING, DSW.SETTINGS_UNAVAILABLE, DS.UPDATED_TIME 
+                    FROM DMS_SCREEN DS 
+                    LEFT JOIN DMS_SCREEN_WARNING DSW ON DS.SCREEN_ID = DSW.SCREEN_ID 
+                    WHERE DS.SCREEN_ID IN (${screenIds.map((screenId, index) => `$${Number(index + 1)}`)})`;
+        return await this.dmsDatabase.selectRows({
+            text: query,
+            values: screenIds,
+        });
+    }
+
+    async sendNotification({ id, notification, state, failMessage = '' }) {
+        if (notification) {
+            const params = {
+                MessageBody: JSON.stringify({
+                    messageId: notification.messageId,
+                    screenId: id,
+                    type: notification.type,
+                    messageType: 'NOTIFY',
+                    state: state,
+                    target: notification.target,
+                    ...(failMessage && { errorMsg: failMessage }),
+                }),
+                QueueUrl: this.notificationSQSUrl,
+                MessageGroupId: 'default-group',
+            };
+            await this.sqsService.sendMessage(params, this.logger.getLogContext() ?? undefined);
+            this.logger.info(`[SEND][NOTIFICATION]`, params);
+        }
+    }
 }
-
-
-
-
-
-const CryptoJS = require('crypto-js');
-
-const encrypt = (data, key, iv) => {
-    const secret = CryptoJS.enc.Utf8.parse(key);
-    const cipher = CryptoJS.AES.encrypt(data, secret, {
-        iv: CryptoJS.enc.Hex.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        keySize: 256 / 32,
-        padding: CryptoJS.pad.Pkcs7,
-    });
-    return cipher.toString();
-};
-
-const decrypt = (data, secret, iv) => {
-    const decrypted = CryptoJS.AES.decrypt(data.toString(), secret, {
-        iv: CryptoJS.enc.Hex.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        keySize: 256 / 32,
-        padding: CryptoJS.pad.Pkcs7,
-    });
-    return decrypted.toString(CryptoJS.enc.Utf8);
-};
-
-const encryptHmac = (payload, secretKey) => {
-    return CryptoJS.HmacSHA256(payload, secretKey).toString();
-};
-
-const CryptoService = {
-    encrypt,
-    decrypt,
-    encryptHmac,
-};
-module.exports = CryptoService;
+module.exports = DMSService;
