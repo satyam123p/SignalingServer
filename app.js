@@ -1,3 +1,36 @@
+{
+  "function": "createPlaylistSchema",
+  "data": {
+    "playlistName": "My Playlist",
+    "playlistId": "123e4567-e89b-12d3-a456-426614174000",
+    "playlistType": "SYNCPLAY",
+    "inEffect": "fade",
+    "contents": [
+      {
+        "contentId": "862B04BF-8DA4-41AA-8697-FA5ADF29742C",
+        "contentName": "Video 1",
+        "thumbnailId": "00000000-0000-0000-0000-000000000000",
+        "contentDuration": 3600,
+        "startDate": "2023-01-01",
+        "expiredDate": "2024-12-31",
+        "mainFileId": "1a868319b3886f4cf874393da793cc09",
+        "fileName": "video1.mp4",
+        "totalSize": "10485760",
+        "syncId": "1"
+      }
+    ]
+  },
+  "syncGroups": [
+    {
+      "syncId": "1",
+      "screenIds": ["screen1", "screen2"]
+    }
+  ]
+}
+
+
+
+
 
 import json
 import logging
