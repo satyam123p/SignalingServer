@@ -1,3 +1,111 @@
+import json
+import logging
+from typing import Dict, Any
+
+# Configure logging for Lambda (logs to CloudWatch)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    AWS Lambda handler to process PublishingService action requests synchronously.
+    Expected event format:
+    {
+        "action": "getPublishing|setPublishingByPlaylistId|...",
+        "params": {...action-specific parameters...},
+        "conn": {...database connection params, optional...}
+    }
+    """
+    try:
+        action = event.get('action')
+        params = event.get('params', {})
+        conn_params = event.get('conn', {})
+
+        logger.info(f"Received event: action={action}, params={json.dumps(params)}")
+
+        # Initialize PublishingService
+        db_service = DBService(conn_params) if conn_params else None
+        service = PublishingService(
+            region=params.get('region', 'ap-northeast-1'),
+            db_instance=db_service,
+            bucket=params.get('bucket', ''),
+            sqs_url=params.get('sqs_url', ''),
+            delay_batch_time=params.get('delay_batch_time', 10)
+        )
+
+        # Dispatch actions using if-else
+        if action == 'get_shared_status_by_content_id':
+            result = service.get_shared_status_by_content_id(params.get('id'))
+        elif action == 'get_shared_status_by_playlist_id':
+            result = service.get_shared_status_by_playlist_id(params.get('id'))
+        elif action == 'get_shared_status_by_program_id':
+            result = service.get_shared_status_by_program_id(params.get('id'))
+        elif action == 'get_screens_with_publishing_id':
+            result = service.get_screens_with_publishing_id(
+                params.get('id'), params.get('conn'), params.get('place_id'))
+        elif action == 'get_publishing':
+            result = service.get_publishing(params.get('screen_id'))
+        elif action == 'get_publishing_by_content_id':
+            result = service.get_publishing_by_content_id(params.get('id'))
+        elif action == 'delete_with_screen_id':
+            result = service.delete_with_screen_id(params.get('screen_id'), params.get('conn'))
+        elif action == 'get_program':
+            result = service.get_program(params.get('id'))
+        elif action == 'get_content':
+            result = service.get_content(params.get('content_id'))
+        elif action == 'get_playlist':
+            result = service.get_playlist(params.get('playlist_id'))
+        elif action == 'get_playlist_ids_by_content_id':
+            result = service.get_playlist_ids_by_content_id(params.get('content_id'))
+        elif action == 'get_playlist_ids_by_sub_playlist_ids':
+            result = service.get_playlist_ids_by_sub_playlist_ids(params.get('sub_playlist_ids', []))
+        elif action == 'get_program_ids_by_content_id':
+            result = service.get_program_ids_by_content_id(params.get('content_id'))
+        elif action == 'get_sync_group':
+            result = service.get_sync_group(params.get('id'))
+        elif action == 'check_publishing_and_init':
+            result = service.check_publishing_and_init(
+                params.get('id'), params.get('type'), params.get('conn'), params.get('parent_id'),
+                params.get('place_id'), params.get('screen_ids', []))
+        elif action == 'check_is_published':
+            result = service.check_is_published(
+                params.get('id'), params.get('type'), params.get('parent_id'), params.get('place_id'),
+                params.get('screen_ids', []))
+        elif action == 'remove_published':
+            result = service.remove_published(params.get('screen_id'), params.get('conn'))
+        elif action == 'set_publishing_by_playlist_id':
+            result = service.set_publishing_by_playlist_id(
+                params.get('playlist_id'), params.get('status'), params.get('conn'), params.get('place_id'))
+        elif action == 'set_publishing_by_program_id':
+            result = service.set_publishing_by_program_id(
+                params.get('program_id'), params.get('status'), params.get('conn'), params.get('place_id'))
+        elif action == 'get_related_contents_by_id':
+            result = service.get_related_contents_by_id(params.get('id'), params.get('type'))
+        elif action == 'update_publishing_to_db':
+            result = service.update_publishing_to_db(
+                params.get('id'), params.get('type'), params.get('status'), params.get('conn'), params.get('place_id'))
+        else:
+            logger.error(f"Invalid action: {action}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f'Invalid action: {action}'})
+            }
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result, default=str)
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+                              }
+
+
+
+
 
 import React, { useRef, useState, useEffect} from 'react';
 const type = {
