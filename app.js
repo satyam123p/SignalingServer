@@ -1,7 +1,34 @@
-const authResult = accessControlList[method.toUpperCase()] ? accessControlList[method.toUpperCase()].some((api) => {
-                            const urlMatch = match(api, { decode: decodeURIComponent });
-                            let originalUrlWithoutQuery = originalUrl.split('?')[0];
-                            return urlMatch(originalUrlWithoutQuery) != false;
-                            })
-                            : 
-                            false;
+package elTest;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class BA {
+    private int bal = 5000;
+    private final Lock lock = new ReentrantLock();
+    public void withdraw(int amount) {
+        System.out.println(Thread.currentThread().getName() + " is attempting to withdraw amount:->" + amount);
+        try {
+            if (lock.tryLock(1000,TimeUnit.MILLISECONDS)) {
+                try{
+                    if (amount<=bal){
+                        Thread.sleep(5000);
+                        bal = bal-amount;
+                        System.out.println("Transaction is being processed successfully.Remaining balance After transaction by " + Thread.currentThread().getName() + " : "+ bal);
+                    }else{
+                        System.out.println("Insufficient balance.");
+                    }
+                }catch(Exception e){
+                    System.out.println("Exception occurred here check it :->" + e);
+                    Thread.currentThread().interrupt();
+                }
+            } else {
+                System.out.println("Server is running busy.Try after few minutes.");
+            }
+        } catch (InterruptedException e) {
+            System.out.println("Thread is interrupted.");
+            Thread.currentThread().interrupt();
+        }finally {
+            lock.unlock();
+        }
+    }
+}
