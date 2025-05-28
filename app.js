@@ -1,13 +1,61 @@
-Thread2 is attempting to withdraw amount:->300
-Thread1 is attempting to withdraw amount:->300
-Server is running busy.Try after few minutes.
-Exception in thread "Thread1" java.lang.IllegalMonitorStateException
-	at java.base/java.util.concurrent.locks.ReentrantLock$Sync.tryRelease(ReentrantLock.java:176)
-	at java.base/java.util.concurrent.locks.AbstractQueuedSynchronizer.release(AbstractQueuedSynchronizer.java:1059)
-	at java.base/java.util.concurrent.locks.ReentrantLock.unlock(ReentrantLock.java:495)
-	at elTest.BA.withdraw(BA.java:31)
-	at elTest.Main$1.run(Main.java:9)
-	at java.base/java.lang.Thread.run(Thread.java:1575)
-Transaction is being processed successfully.Remaining balance After transaction by Thread2 : 4700
+package elTest;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+public class BA {
+    private int bal = 5000;
+    private final Lock lock = new ReentrantLock();
+    public void withdraw(int amount) {
+        System.out.println(Thread.currentThread().getName() + " is attempting to withdraw amount:->" + amount);
+        try {
+            if (lock.tryLock(1000,TimeUnit.MILLISECONDS)) {
+                try{
+                    if (amount<=bal){
+                        Thread.sleep(5000);
+                        bal = bal-amount;
+                        System.out.println("Transaction is being processed successfully.Remaining balance After transaction by " + Thread.currentThread().getName() + " : "+ bal);
+                    }else{
+                        System.out.println("Insufficient balance.");
+                    }
+                }catch(Exception e){
+                    System.out.println("Exception occurred here check it :->" + e);
+                    Thread.currentThread().interrupt();
+                }
+                finally{
+                    lock.unlock();
+                }
+            } else {
+                System.out.println("Server is running busy.Try after few minutes " + Thread.currentThread().getName() + ".");
+            }
+        } catch (InterruptedException e) {
+            System.out.println("Thread is interrupted.");
+            Thread.currentThread().interrupt();
+        }
+    }
+}
 
-Process finished with exit code 0
+package elTest;
+public class Main {
+    public static void main(String[] args) {
+        try{
+            BA  b = new BA();
+            Runnable task = new Runnable() {
+                @Override
+                public void run() {
+                    b.withdraw(300);
+                }
+            };
+            Thread t1  = new Thread(task,"Thread1");
+            Thread t2 = new Thread(task,"Thread2");
+            t1.start();
+            t2.start();
+        }catch (Exception e){
+            System.out.println("See what happens->" + e);
+        }
+    }
+}
+
+
+
+
+
